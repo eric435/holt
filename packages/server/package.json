@@ -1,0 +1,74 @@
+{
+  "name": "nitpick-notes",
+  "version": "0.1.0",
+  "description": "Local server for the nitpick Chrome extension: writes screenshots, recordings and QA notes straight into your repo as markdown. CLI + Vite plugin, zero dependencies.",
+  "license": "MIT",
+  "keywords": [
+    "qa",
+    "screenshot",
+    "screen-recording",
+    "notes",
+    "markdown",
+    "vite-plugin",
+    "chrome-extension"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/nitpick.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/OWNER/nitpick#readme",
+  "bugs": {
+    "url": "https://github.com/OWNER/nitpick/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "nitpick": "./dist/cli.js",
+    "nitpick-notes": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    },
+    "./schema.json": "./schema.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schema.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "vite": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@nitpick/protocol": "workspace:*",
+    "vite": "^5.4.11"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

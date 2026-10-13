@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://unpkg.com/nitpick-notes/schema.json",
+  "title": "nitpick.config.json",
+  "description": "Configuration for nitpick-notes, the local server for the nitpick Chrome extension. Every key is optional. This schema is for editor autocomplete only; the server validates the file itself.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL of this schema, for editor support."
+    },
+    "outputDir": {
+      "type": "string",
+      "minLength": 1,
+      "default": "qa",
+      "description": "Directory (relative to the project root) where session folders are written. If nitpick creates it, it adds a .gitignore so sessions are not committed by default."
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "default": 4848,
+      "description": "Port for the standalone server (`npx nitpick`). Ignored by the Vite plugin, which uses Vite's port."
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "default": "127.0.0.1",
+      "description": "Interface the standalone server binds to. Keep this on loopback: the server writes files to disk. Anything else logs a warning."
+    },
+    "token": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "default": null,
+      "description": "Optional shared secret. When set, the extension must send it in the x-nitpick-token header. Enter the same value in the extension settings."
+    },
+    "maxUploadBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 209715200,
+      "description": "Maximum size of a single uploaded screenshot or recording, in bytes. Default 200 MiB."
+    },
+    "sessionTitle": {
+      "type": "string",
+      "minLength": 1,
+      "default": "QA session",
+      "description": "Default title (the H1 of notes.md) for new sessions."
+    },
+    "allowedOrigins": {
+      "type": "array",
+      "default": [],
+      "description": "Extra web origins allowed to call the API, e.g. \"http://localhost:3000\". chrome-extension:// origins are always allowed. Exact origins only: no wildcards, paths, or trailing slashes.",
+      "items": {
+        "type": "string",
+        "pattern": "^https?://[^/*]+$"
+      }
+    }
+  }
+}

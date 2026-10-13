@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Home – Example Shop</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">Example Shop</a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="/checkout.html" class="button">Checkout</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h1>Things worth nitpicking</h1>
+        <p>
+          A deliberately long page with a fixed header, so full-page screenshots have something to
+          stitch. Scroll down, capture, and check that the header appears only once.
+        </p>
+      </section>
+
+      <section id="features" class="cards"></section>
+
+      <section id="pricing">
+        <h2>Pricing</h2>
+        <table class="pricing">
+          <thead>
+            <tr><th>Plan</th><th>Price</th><th>Seats</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Hobby</td><td>$0</td><td>1</td></tr>
+            <tr><td>Team</td><td>$12 / seat</td><td>2–50</td></tr>
+            <tr><td>Enterprise</td><td>Talk to us</td><td>Unlimited, probably</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="faq">
+        <h2>FAQ</h2>
+        <div id="faq-list"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Example Shop · made for testing nitpick · <a href="/checkout.html">Checkout</a></p>
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

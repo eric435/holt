@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Checkout – Example Shop</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">Example Shop</a>
+      <nav>
+        <a href="/#features">Features</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/checkout.html" class="button">Checkout</a>
+      </nav>
+    </header>
+
+    <main class="checkout">
+      <h1>Checkout</h1>
+      <form id="checkout-form" novalidate>
+        <fieldset>
+          <legend>Contact</legend>
+          <label>Email <input name="email" type="email" autocomplete="off" required /></label>
+          <label>Name <input name="name" autocomplete="off" required /></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Order</legend>
+          <label>
+            Plan
+            <select name="plan">
+              <option>Hobby</option>
+              <option selected>Team</option>
+              <option>Enterprise</option>
+            </select>
+          </label>
+          <label>
+            Seats
+            <span class="stepper">
+              <button type="button" data-step="-1" aria-label="Fewer seats">−</button>
+              <input name="seats" type="number" value="2" min="1" max="50" />
+              <button type="button" data-step="1" aria-label="More seats">+</button>
+            </span>
+          </label>
+          <label>Coupon <input name="coupon" placeholder="Try a few spaces" /></label>
+          <label class="inline"><input name="terms" type="checkbox" /> I agree to the very reasonable terms</label>
+        </fieldset>
+
+        <p class="total">Total: <strong id="total">$24.00</strong></p>
+        <button type="submit" class="button">Place order</button>
+        <p id="result" role="status"></p>
+      </form>
+    </main>
+
+    <footer class="site-footer">
+      <p>Example Shop · nothing on this page is real; no data leaves your browser.</p>
+    </footer>
+    <script type="module" src="/src/checkout.ts"></script>
+  </body>
+</html>
