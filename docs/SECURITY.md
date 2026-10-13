@@ -13,6 +13,11 @@ from a browser extension. That combination deserves a short threat model.
    one). An optional shared token adds a second factor. Requests with no
    `Origin` header at all (curl, scripts) are allowed only from loopback and
    are intended for local testing.
+   The `Host` header must also name a loopback host (or the configured bind
+   host). This defends against DNS rebinding, where an attacker's domain
+   re-resolves to 127.0.0.1 so their page becomes same-origin with the
+   server: the browser then sends no `Origin` on GETs, but the `Host` header
+   still says `evil.example`.
 2. **Path traversal.** The extension never supplies file names or paths. The
    server generates names from a counter and an allow-list of media types,
    and resolves every write inside the session directory, re-checking the
@@ -32,5 +37,7 @@ from a browser extension. That combination deserves a short threat model.
 
 - Someone with local shell access as your user. They can already edit your
   repo directly.
-- Content of the screenshots. They are whatever is on your screen; the
-  output directory is git-ignored by default and you decide what to commit.
+- Content of the screenshots. They are whatever is on your screen. When
+  nitpick creates the output directory it writes a `.gitignore` there, so
+  sessions are not committed unless you decide to. If the directory already
+  existed, nitpick leaves your ignore rules alone.
