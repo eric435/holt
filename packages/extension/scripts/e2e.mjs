@@ -17,7 +17,9 @@
  *      Screenshots go panel -> worker -> server; the note goes panel -> server.
  *   5. Check on disk: one session folder; notes.md has a header and entries
  *      1-4 with the right headings and Page links; the PNGs are valid and
- *      the full-page one is taller than the viewport one. Then SIGTERM Vite
+ *      the full-page one is taller than the viewport one; the example's
+ *      fixed header appears exactly once in the full-page PNG (pixel
+ *      sampling at the header's position in every tile). Then SIGTERM Vite
  *      and check the "_Session ended at" footer.
  *   6. Check the cross-origin path: the worker's requests succeed (Chrome's
  *      local/private network checks don't block them), whether Chrome sent a
@@ -48,6 +50,7 @@ import {
   stopChrome,
   waitFor,
 } from "./lib/chrome.mjs";
+import { colorClose, decodePng, parseCssColor, pngInfo as pngInfoFromBuffer } from "./lib/png.mjs";
 
 const EXT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(EXT_ROOT, "../..");
@@ -189,11 +192,7 @@ function entryCount(notes) {
 
 /** Validate PNG signature and read IHDR width/height. */
 function pngInfo(file) {
-  const buf = readFileSync(file);
-  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  if (buf.length < 24 || !buf.subarray(0, 8).equals(signature)) return { ok: false, reason: "bad PNG signature" };
-  if (buf.toString("ascii", 12, 16) !== "IHDR") return { ok: false, reason: "first chunk is not IHDR" };
-  return { ok: true, width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), bytes: buf.length };
+  return pngInfoFromBuffer(readFileSync(file));
 }
 
 /** Split notes.md into entry blocks keyed by number. */
@@ -339,8 +338,20 @@ try {
 
   // ---- 2. full-page screenshot ------------------------------------------------
   viewports["Screenshot (full page)"] = await pageViewport();
+  // Where the fixed header's "Checkout" button is (viewport CSS px) and its
+  // colour: sampled in the stitched PNG to prove the header appears once.
+  // x is 4px into the button's left padding, so we hit background, not text.
+  const headerProbe = await evaluate(cdp, page, `(() => {
+    const button = document.querySelector('.site-header .button');
+    const r = button.getBoundingClientRect();
+    return { x: r.left + 4, y: r.top + r.height / 2, color: getComputedStyle(button).backgroundColor,
+             position: getComputedStyle(document.querySelector('.site-header')).position };
+  })()`);
+  require_(headerProbe.position === "fixed", `the example's .site-header is no longer position: fixed (${headerProbe.position})`);
   await clickPanelButton("Full page");
   await waitForEntries(2, "entry 2 (full-page screenshot)");
+  const headerAfter = await evaluate(cdp, page, "(() => { const h = document.querySelector('.site-header'); return getComputedStyle(h).visibility + '|' + h.style.cssText; })()");
+  check(headerAfter === "visible|", `the fixed header was not restored after the capture (visibility|inline style = ${headerAfter})`);
   const scrollAfter = await evaluate(cdp, page, "scrollY");
   check(scrollAfter === 0, `full-page capture did not restore the scroll position (scrollY=${scrollAfter})`);
   log("2/4 full-page screenshot written");
@@ -454,6 +465,29 @@ try {
   if (vp) {
     const v = viewports["Screenshot"];
     check(vp.height === Math.round(v.h * v.dpr), `viewport PNG is ${vp.height}px tall, page viewport was ${v.h} CSS px`);
+  }
+  // The fixed header must appear exactly once: present at the top of tile 1,
+  // absent at the same viewport position in every later full tile.
+  if (fp) {
+    const image = decodePng(readFileSync(join(sessionDir, fp.file)));
+    const { h: vh, dpr } = viewports["Screenshot (full page)"];
+    const accent = parseCssColor(headerProbe.color);
+    const at = (cssY) => image.pixel(headerProbe.x * dpr, cssY * dpr);
+    const top = at(headerProbe.y);
+    check(colorClose(top, accent), `fixed header not found at the top of the full-page PNG (pixel ${top}, expected ~${accent})`);
+    const pageH = image.height / dpr;
+    const repeats = [];
+    let tilesChecked = 0;
+    // Tile i starts at i*vh. Only tiles the browser could scroll to exactly
+    // (i*vh <= pageH - vh) show the viewport's top edge, where the header sits.
+    for (let i = 1; i * vh <= pageH - vh; i++) {
+      tilesChecked++;
+      const px = at(i * vh + headerProbe.y);
+      if (colorClose(px, accent)) repeats.push(`tile ${i + 1} at y=${i * vh + headerProbe.y}`);
+    }
+    check(tilesChecked > 0, `full-page PNG too short (${pageH} CSS px for a ${vh} px viewport) to test header repetition`);
+    check(repeats.length === 0, `fixed header repeated in the full-page PNG: ${repeats.join(", ")}`);
+    log(`fixed header: present at top (pixel ${top}), absent in ${tilesChecked - repeats.length}/${tilesChecked} later tiles`);
   }
   if (area) {
     const { dpr } = viewports["Screenshot (area)"];

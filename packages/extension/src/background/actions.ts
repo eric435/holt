@@ -51,6 +51,9 @@ export function takeScreenshot(mode: ScreenshotMode, tab: chrome.tabs.Tab): Prom
       if (mode === "full-page") {
         const result = await captureFullPage(tab.id, tab.windowId);
         shot = result;
+        if (result.pinnedScanTruncated) {
+          await notifyToast("info", "This page has a lot of elements; some fixed or sticky ones may repeat in the full-page screenshot.");
+        }
         if (result.truncated) {
           await notifyToast(
             "info",

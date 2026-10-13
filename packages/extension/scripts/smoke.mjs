@@ -8,10 +8,12 @@
  *   2. Fail on any console.error / uncaught exception in the worker within ~3 s.
  *   3. Extra checks: commands registered, the side panel page renders without
  *      errors, the on-demand content scripts work on a local fixture page
- *      (page-helper metrics/scroll/restore, area-select overlay idempotency
+ *      (page-helper metrics/scroll/restore incl. hiding and restoring the
+ *      fixed header, area-select overlay idempotency
  *      and the Esc-cancel round trip back to the panel as a toast), and a
  *      simulated toolbar click both opens the side panel and grants
- *      activeTab (captureVisibleTab succeeds).
+ *      activeTab (captureVisibleTab succeeds), and page-helper metrics taken
+ *      during the panel's open animation wait for the final width.
  *
  * Usage: pnpm --filter @nitpick/extension smoke   (build first)
  * Env:   CHROME_PATH=/path/to/chrome   to use another Chrome/Chromium.
@@ -117,14 +119,18 @@ async function run(headless) {
           await inject("content/page-helper.js");
           await inject("content/page-helper.js");
           const metrics = await chrome.tabs.sendMessage(tab.id, { type: "helper:metrics" });
-          const scrolled = await chrome.tabs.sendMessage(tab.id, { type: "helper:scroll-to", y: 1000 });
+          const scrolled = await chrome.tabs.sendMessage(tab.id, { type: "helper:scroll-to", y: 1000, hideFixed: true });
+          const headerState = () => chrome.scripting.executeScript({ target: { tabId: tab.id },
+            func: () => getComputedStyle(document.querySelector("header")).visibility + "|" + document.querySelector("header").style.cssText });
+          const [{ result: headerWhileHidden }] = await headerState();
           await chrome.tabs.sendMessage(tab.id, { type: "helper:restore" });
+          const [{ result: headerAfterRestore }] = await headerState();
           const [{ result: afterRestore }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => scrollY });
           await inject("content/area-select.js");
           await inject("content/area-select.js");
           const [{ result: overlays }] = await chrome.scripting.executeScript({
             target: { tabId: tab.id }, func: () => document.querySelectorAll("nitpick-area-select").length });
-          return { title: tab.title, metrics, scrolled, afterRestore, overlays };
+          return { title: tab.title, metrics, scrolled, afterRestore, overlays, headerWhileHidden, headerAfterRestore };
         })()`,
       );
       if (result.error) {
@@ -135,6 +141,11 @@ async function run(headless) {
         expect(result.metrics.scrollHeight >= 6000, `unexpected scrollHeight ${result.metrics.scrollHeight}`);
         expect(result.scrolled.scrollY === 1000, `scroll-to landed at ${result.scrolled.scrollY}`);
         expect(result.afterRestore === 0, `restore left scrollY at ${result.afterRestore}`);
+        expect(result.metrics.widthStable === true, "page-helper reported an unstable viewport width");
+        expect(result.scrolled.hiddenCount === 1, `hideFixed should hide the 1 fixed header, hid ${result.scrolled.hiddenCount}`);
+        expect(result.headerWhileHidden.startsWith("hidden|"), `fixed header not hidden during capture: ${result.headerWhileHidden}`);
+        expect(result.headerAfterRestore === "visible|", `fixed header not restored exactly: ${result.headerAfterRestore}`);
+        log(`pinned elements: hid ${result.scrolled.hiddenCount} (${result.headerWhileHidden.split("|")[0]}), after restore "${result.headerAfterRestore}"`);
         expect(result.overlays === 1, `area-select injected twice should give 1 overlay, got ${result.overlays}`);
 
         // Press Esc in the page: overlay removes itself, sends area-cancelled,
@@ -160,7 +171,21 @@ async function run(headless) {
         log(`skipping toolbar-click check: ${error.message}`);
       }
       if (triggered) {
+        // Right away, while the side panel is still animating the page
+        // narrower: the helper must wait for the width to settle before measuring.
+        // (`raw` is a plain read at the same moment, logged as a control.)
+        const raw = await evaluate(cdp, page, "innerWidth");
+        const early = await evaluate(
+          cdp,
+          worker.sessionId,
+          `chrome.tabs.query({}).then(ts => ts.find(t => t.url === ${JSON.stringify(fixtureUrl)}))
+             .then(t => chrome.tabs.sendMessage(t.id, { type: "helper:metrics" }))`,
+        );
         await sleep(1000);
+        const settledWidth = await evaluate(cdp, page, "innerWidth");
+        expect(early.widthStable === true, "helper:metrics right after the panel opened reported an unstable width");
+        expect(early.innerWidth === settledWidth, `helper:metrics measured ${early.innerWidth}px wide during the panel animation; settled width is ${settledWidth}px`);
+        log(`metrics right after the toolbar click: width ${early.innerWidth} (raw read at click time: ${raw}, settled: ${settledWidth}), stable=${early.widthStable}`);
         const { targetInfos: all } = await cdp.send("Target.getTargets");
         const panels = all.filter((t) => t.url === panelUrl && t.targetId !== panelTarget);
         const canCapture = await evaluate(

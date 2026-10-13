@@ -9,9 +9,17 @@
  *      not, there is no DOM).
  *   4. Restore the user's scroll position, even on failure.
  *
+ * Fixed and sticky elements: the first tile is captured as is; for every
+ * later tile the helper hides them (visibility: hidden), so a fixed header
+ * appears once, at the top. See content/pinned.ts.
+ *
+ * Resizes: the helper waits for the viewport width to settle before we
+ * start (the side panel animates the page narrower when it opens), and we
+ * abort if a later capture comes back with a different width rather than
+ * stitching mismatched tiles.
+ *
  * Known limitations (documented in the README):
- *  - position: fixed / sticky elements (headers, chat bubbles) appear in
- *    every tile, because we capture what is on screen.
+ *  - Sticky elements that are not stuck yet are missing from later tiles.
  *  - Pages that scroll an inner element instead of the window (app shells
  *    with `overflow: auto` on a wrapper) are captured as one viewport.
  *  - Very tall pages are truncated at MAX_FULL_PAGE_HEIGHT (or less if the
@@ -37,7 +45,13 @@ export interface FullPageResult {
   /** Document height in CSS px, for the "page was truncated" message. */
   pageHeight: number;
   capturedHeight: number;
+  /** Fixed/sticky elements hidden for tiles after the first. */
+  pinnedHidden: number;
+  /** The pinned-element scan stopped at its limit (huge page): some may repeat. */
+  pinnedScanTruncated: boolean;
 }
+
+export const RESIZED_DURING_CAPTURE = "The page was resized during capture; try again.";
 
 export async function captureFullPage(tabId: number, windowId: number): Promise<FullPageResult> {
   await injectFile(tabId, PAGE_HELPER_FILE);
@@ -53,10 +67,14 @@ export async function captureFullPage(tabId: number, windowId: number): Promise<
   let canvas: OffscreenCanvas | undefined;
   let ctx: OffscreenCanvasRenderingContext2D | null = null;
   let scale = metrics.devicePixelRatio;
+  let pinnedHidden = 0;
+  let pinnedScanTruncated = false;
 
   try {
-    for (const tile of plan.tiles) {
-      const { scrollY } = await sendToTab(tabId, { type: "helper:scroll-to", y: tile.scrollY });
+    for (const [index, tile] of plan.tiles.entries()) {
+      const scrolled = await sendToTab(tabId, { type: "helper:scroll-to", y: tile.scrollY, hideFixed: index > 0 });
+      pinnedHidden = Math.max(pinnedHidden, scrolled.hiddenCount);
+      pinnedScanTruncated ||= scrolled.scanTruncated;
       const bitmap = await decode(await captureViewportPng(windowId));
       try {
         if (!canvas) {
@@ -65,8 +83,11 @@ export async function captureFullPage(tabId: number, windowId: number): Promise<
           canvas = new OffscreenCanvas(bitmap.width, Math.round(plan.outputHeight * scale));
           ctx = canvas.getContext("2d");
           if (!ctx) throw new Error("Could not create a 2D canvas for stitching.");
+        } else if (bitmap.width !== canvas.width) {
+          // The window or side panel changed size mid-capture.
+          throw new Error(RESIZED_DURING_CAPTURE);
         }
-        const srcY = tileSourceY(tile, scrollY, metrics.innerHeight);
+        const srcY = tileSourceY(tile, scrolled.scrollY, metrics.innerHeight);
         const band = tileToDevice(tile, srcY, scale, bitmap.height);
         ctx!.drawImage(bitmap, 0, band.sy, bitmap.width, band.sh, 0, band.dy, bitmap.width, band.dh);
       } finally {
@@ -74,7 +95,8 @@ export async function captureFullPage(tabId: number, windowId: number): Promise<
       }
     }
   } finally {
-    // Put the page back where the user had it, even if a capture failed.
+    // Un-hide fixed elements and put the page back where the user had it,
+    // even if a capture failed.
     await sendToTab(tabId, { type: "helper:restore" }).catch(() => undefined);
   }
 
@@ -87,5 +109,7 @@ export async function captureFullPage(tabId: number, windowId: number): Promise<
     truncated: plan.truncated,
     pageHeight: metrics.scrollHeight,
     capturedHeight: plan.outputHeight,
+    pinnedHidden,
+    pinnedScanTruncated,
   };
 }

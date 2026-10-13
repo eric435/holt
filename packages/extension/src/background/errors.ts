@@ -20,7 +20,7 @@ export function friendlyCaptureError(error: unknown): string {
   if (/chrome:\/\/|chrome-extension:\/\/|extensions gallery|cannot be scripted|Cannot access a/i.test(text)) {
     return "Chrome does not allow extensions to capture this kind of page (chrome:// pages, the Web Store, other extensions).";
   }
-  if (/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|rate/i.test(text)) {
+  if (/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|rate limit|quota/i.test(text)) {
     return "Chrome's screenshot rate limit was hit. Wait a second and try again.";
   }
   if (/No tab with id|tab was closed/i.test(text)) {

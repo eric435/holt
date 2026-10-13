@@ -74,12 +74,15 @@ Screenshots need an activeTab grant for the tab. You get one by pressing a nitpi
 ## Known limitations
 
 - **Closing the side panel stops any recording in progress, and the recording is lost.** The recorders live in the panel page (they need a document), and closing the panel destroys that page.
-- **Full-page screenshots** scroll the page and stitch viewport captures. As a result:
-  - fixed and sticky elements (headers, cookie bars, chat bubbles) appear once per viewport-high band;
+- **Full-page screenshots** scroll the page and stitch viewport captures. To keep a fixed header from repeating, the first viewport is captured as is, and fixed and `position: sticky` elements are hidden (`visibility: hidden`, so nothing shifts) for every later one, then restored. Limits of that approach:
+  - sticky elements that aren't stuck yet (e.g. a sticky table header further down the page) are hidden too, so they're missing below the first viewport;
+  - a pinned element's child with an explicit `visibility: visible` still repeats, and pinned elements inside shadow DOM aren't found;
+  - on huge pages the scan stops after 5,000 elements, and the panel says some fixed elements may repeat;
   - a classic (non-overlay) scrollbar appears on the right edge of every band;
   - pages that scroll an inner element instead of the window (app shells with `overflow: auto` on a wrapper) come out as a single viewport;
-  - capture stops at 20,000 CSS px or 40 tiles, or earlier on very wide/high-DPI screens to stay within canvas memory limits. The panel tells you when a page was cut off.
-  - It takes about half a second per viewport, because Chrome limits `captureVisibleTab` to two calls per second.
+  - capture waits up to about a second for the page width to settle (e.g. while the side panel animates open). If the window is resized mid-capture, it stops with "The page was resized during capture; try again" instead of stitching mismatched pieces;
+  - capture stops at 20,000 CSS px or 40 tiles, or earlier on very wide/high-DPI screens to stay within canvas memory limits. The panel tells you when a page was cut off;
+  - it takes about half a second per viewport, because Chrome limits `captureVisibleTab` to two calls per second.
 - Screenshots can't be taken of `chrome://` pages, the Chrome Web Store, or other extensions' pages. Chrome doesn't allow it.
 - Recorded WebM files have no duration in their header (a MediaRecorder quirk), so some players show no seek bar until the whole file has loaded.
 - If nitpick has no access to the current tab (not localhost, and no activeTab grant yet), notes and recordings are saved with the page recorded as "Unknown page".

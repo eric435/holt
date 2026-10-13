@@ -89,12 +89,31 @@ export interface HelperMetricsRequest {
 export interface HelperScrollRequest {
   type: "helper:scroll-to";
   y: number;
+  /**
+   * Hide position: fixed/sticky elements before this tile (the worker sets it
+   * for every tile after the first, so a fixed header appears only once).
+   * Restored by helper:restore.
+   */
+  hideFixed: boolean;
+}
+
+export interface HelperScrollResponse {
+  scrollY: number;
+  /** Pinned elements currently hidden by the helper. */
+  hiddenCount: number;
+  /** True if the pinned-element scan stopped at its limit on a huge page. */
+  scanTruncated: boolean;
 }
 export interface HelperRestoreRequest {
   type: "helper:restore";
 }
 
 export interface PageMetrics {
+  /**
+   * False if the viewport width was still changing when the helper gave up
+   * waiting (e.g. the side panel was animating open).
+   */
+  widthStable: boolean;
   /** Full document height in CSS px. */
   scrollHeight: number;
   innerWidth: number;
@@ -124,7 +143,7 @@ export interface ResponseMap {
   "entry-added": Ack;
   toast: Ack;
   "helper:metrics": PageMetrics;
-  "helper:scroll-to": { scrollY: number };
+  "helper:scroll-to": HelperScrollResponse;
   "helper:restore": Ack;
 }
 

@@ -17,3 +17,13 @@ describe("friendlyCaptureError", () => {
     expect(friendlyCaptureError("plain")).toBe("plain");
   });
 });
+
+describe("friendlyCaptureError: pass-through of our own messages", () => {
+  it("does not mangle the resize error", () => {
+    const msg = "The page was resized during capture; try again.";
+    expect(friendlyCaptureError(new Error(msg))).toBe(msg);
+  });
+  it("still recognises Chrome's rate-limit error", () => {
+    expect(friendlyCaptureError(new Error("This request exceeds the MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota."))).toMatch(/rate limit/);
+  });
+});
