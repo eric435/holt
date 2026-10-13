@@ -8,6 +8,8 @@ import {
   isEntryAddedMessage,
   isMessage,
   isNoReceiverError,
+  isTopFrameOfTab,
+  isTrustedExtensionSender,
   isToastMessage,
 } from "./messages.js";
 
@@ -88,5 +90,33 @@ describe("errors", () => {
     expect(isNoReceiverError(new Error("Could not establish connection. Receiving end does not exist."))).toBe(true);
     expect(isNoReceiverError(new Error("The message port closed before a response was received."))).toBe(true);
     expect(isNoReceiverError(new Error("Other"))).toBe(false);
+  });
+});
+
+describe("isTrustedExtensionSender", () => {
+  const ID = "abcdefghijklmnopabcdefghijklmnop";
+  it("accepts our worker / side panel (no tab)", () => {
+    expect(isTrustedExtensionSender({ id: ID }, ID)).toBe(true);
+    expect(isTrustedExtensionSender({ id: ID, frameId: 0 }, ID)).toBe(true);
+  });
+  it("refuses our own content scripts (they have a tab)", () => {
+    expect(isTrustedExtensionSender({ id: ID, tab: { id: 7 }, frameId: 0 }, ID)).toBe(false);
+  });
+  it("refuses other extensions and missing ids", () => {
+    expect(isTrustedExtensionSender({ id: "other" }, ID)).toBe(false);
+    expect(isTrustedExtensionSender({}, ID)).toBe(false);
+    expect(isTrustedExtensionSender({ id: "" }, "")).toBe(false);
+  });
+});
+
+describe("isTopFrameOfTab", () => {
+  it("accepts the top frame of the expected tab", () => {
+    expect(isTopFrameOfTab({ tab: { id: 7 }, frameId: 0 }, 7)).toBe(true);
+  });
+  it("refuses subframes, other tabs and non-tab senders", () => {
+    expect(isTopFrameOfTab({ tab: { id: 7 }, frameId: 3 }, 7)).toBe(false);
+    expect(isTopFrameOfTab({ tab: { id: 8 }, frameId: 0 }, 7)).toBe(false);
+    expect(isTopFrameOfTab({ tab: { id: 7 } }, 7)).toBe(false);
+    expect(isTopFrameOfTab({}, 7)).toBe(false);
   });
 });

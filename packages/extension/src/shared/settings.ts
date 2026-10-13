@@ -2,16 +2,21 @@
  * User settings: where the server is, the optional shared token, and whether
  * voice notes keep their audio file.
  *
- * Storage choice:
- *  - `chrome.storage.sync`  for serverUrl + keepAudio: harmless preferences;
- *    syncing them across the user's Chrome profiles is a convenience.
- *  - `chrome.storage.local` for the token: it is a secret and should not be
- *    uploaded to the user's Google account by Chrome Sync.
+ * Storage: everything lives in `chrome.storage.local` (this device only).
+ *  - Not `storage.sync`: a server URL synced to another of the user's
+ *    machines could point that machine at an address that means something
+ *    else there (or at a stranger's IP), and the token is a secret that
+ *    shouldn't be uploaded to the user's Google account. Earlier builds kept
+ *    serverUrl/keepAudio in sync; `migrateFromSync` moves them over once.
+ *  - Who can read it: by default `storage.local` and `storage.sync` are
+ *    readable by our content scripts too, i.e. from inside web pages. The
+ *    worker restricts both to trusted contexts (worker + extension pages)
+ *    at startup with `setAccessLevel`, see `restrictStorageAccess`, so a
+ *    compromised page renderer can't read the token or repoint serverUrl.
+ *    Our content scripts never need settings.
  *
- * Both storage areas are reachable from the worker and the side panel (but
- * not from content scripts unless we opt in, which we don't).
- *
- * The validation functions at the top are pure so they can be unit-tested.
+ * The validation and migration-planning functions are pure so they can be
+ * unit-tested.
  */
 
 import { BASE_PATH, DEFAULT_HOST, DEFAULT_PORT } from "@nitpick/protocol";
@@ -112,42 +117,114 @@ export function normalizeSettings(stored: Partial<Record<keyof Settings, unknown
 }
 
 // ---------------------------------------------------------------------------
-// Storage (thin wrappers over chrome.storage)
+// Migration from storage.sync (pure planning + thin wrapper)
 // ---------------------------------------------------------------------------
 
-const SYNC_KEYS = ["serverUrl", "keepAudio"] as const;
-const LOCAL_KEYS = ["token"] as const;
+/** Keys earlier builds kept in chrome.storage.sync. */
+export const LEGACY_SYNC_KEYS = ["serverUrl", "keepAudio"] as const;
+
+export interface SyncMigrationPlan {
+  /** Values to write to storage.local. */
+  toLocal: Record<string, unknown>;
+  /** Keys to remove from storage.sync (always all legacy keys found there). */
+  removeFromSync: string[];
+}
+
+/**
+ * Decide what to move from sync to local. Values already present in local
+ * win (the user set them on this device since). A synced serverUrl is only
+ * carried over if it is valid and on loopback: a non-loopback URL may have
+ * been synced from another machine and point somewhere unexpected here, so
+ * it is dropped and the user falls back to the default.
+ */
+export function planSyncMigration(
+  synced: Partial<Record<string, unknown>>,
+  local: Partial<Record<string, unknown>>,
+): SyncMigrationPlan {
+  const toLocal: Record<string, unknown> = {};
+  const removeFromSync = LEGACY_SYNC_KEYS.filter((k) => synced[k] !== undefined);
+  if (typeof synced.serverUrl === "string" && local.serverUrl === undefined) {
+    const v = validateServerUrl(synced.serverUrl);
+    if (v.ok && !v.warning) toLocal.serverUrl = v.url;
+  }
+  if (typeof synced.keepAudio === "boolean" && local.keepAudio === undefined) toLocal.keepAudio = synced.keepAudio;
+  return { toLocal, removeFromSync: [...removeFromSync] };
+}
+
+let migration: Promise<void> | undefined;
+
+/** Move legacy settings out of storage.sync, once per context. Never throws. */
+export function migrateFromSync(): Promise<void> {
+  migration ??= (async () => {
+    try {
+      const [synced, local] = await Promise.all([
+        chrome.storage.sync.get([...LEGACY_SYNC_KEYS]),
+        chrome.storage.local.get([...LEGACY_SYNC_KEYS]),
+      ]);
+      const plan = planSyncMigration(synced, local);
+      if (Object.keys(plan.toLocal).length) await chrome.storage.local.set(plan.toLocal);
+      if (plan.removeFromSync.length) await chrome.storage.sync.remove(plan.removeFromSync);
+    } catch (error) {
+      console.warn("[nitpick] settings migration from storage.sync failed", error);
+    }
+  })();
+  return migration;
+}
+
+// ---------------------------------------------------------------------------
+// Access level (called by the worker at startup)
+// ---------------------------------------------------------------------------
+
+/**
+ * Restrict storage.local and storage.sync to trusted contexts (worker and
+ * extension pages), so content scripts can't read the token or change the
+ * server URL. storage.session is already restricted by default. Failures
+ * (an older Chrome without support for an area) are logged, not fatal.
+ */
+export async function restrictStorageAccess(): Promise<void> {
+  const areas = [
+    ["local", chrome.storage.local],
+    ["sync", chrome.storage.sync],
+  ] as const;
+  await Promise.all(
+    areas.map(async ([name, area]) => {
+      try {
+        await area.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+      } catch (error) {
+        console.warn(`[nitpick] could not restrict chrome.storage.${name} to trusted contexts`, error);
+      }
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Storage (thin wrappers over chrome.storage.local)
+// ---------------------------------------------------------------------------
+
+const KEYS = ["serverUrl", "token", "keepAudio"] as const;
 
 export async function loadSettings(): Promise<Settings> {
-  const [synced, local] = await Promise.all([
-    chrome.storage.sync.get([...SYNC_KEYS]),
-    chrome.storage.local.get([...LOCAL_KEYS]),
-  ]);
-  return normalizeSettings({ ...synced, ...local });
+  await migrateFromSync();
+  return normalizeSettings(await chrome.storage.local.get([...KEYS]));
 }
 
 /** Persist a partial update. Throws if serverUrl is invalid. */
 export async function saveSettings(update: Partial<Settings>): Promise<Settings> {
-  const syncPatch: Record<string, unknown> = {};
-  const localPatch: Record<string, unknown> = {};
+  const patch: Record<string, unknown> = {};
   if (update.serverUrl !== undefined) {
     const v = validateServerUrl(update.serverUrl);
     if (!v.ok) throw new Error(v.error);
-    syncPatch.serverUrl = v.url;
+    patch.serverUrl = v.url;
   }
-  if (update.keepAudio !== undefined) syncPatch.keepAudio = update.keepAudio;
-  if (update.token !== undefined) localPatch.token = update.token.trim();
-  await Promise.all([
-    Object.keys(syncPatch).length ? chrome.storage.sync.set(syncPatch) : undefined,
-    Object.keys(localPatch).length ? chrome.storage.local.set(localPatch) : undefined,
-  ]);
+  if (update.keepAudio !== undefined) patch.keepAudio = update.keepAudio;
+  if (update.token !== undefined) patch.token = update.token.trim();
+  if (Object.keys(patch).length) await chrome.storage.local.set(patch);
   return loadSettings();
 }
 
 /** Call `listener` whenever any setting changes (in any context). */
 export function onSettingsChanged(listener: () => void): void {
   chrome.storage.onChanged.addListener((changes, area) => {
-    const keys: readonly string[] = area === "sync" ? SYNC_KEYS : area === "local" ? LOCAL_KEYS : [];
-    if (Object.keys(changes).some((k) => keys.includes(k))) listener();
+    if (area === "local" && Object.keys(changes).some((k) => (KEYS as readonly string[]).includes(k))) listener();
   });
 }

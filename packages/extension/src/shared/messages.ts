@@ -251,6 +251,41 @@ export function isToastMessage(value: unknown): value is ToastMessage {
 }
 
 // ---------------------------------------------------------------------------
+// Sender checks
+//
+// `chrome.runtime.onMessage` only delivers messages from our own extension,
+// but "our own extension" includes content scripts, which run inside web
+// pages. A compromised page renderer could forge messages from them. So:
+//  - commands that act (capture) and broadcasts the panel trusts
+//    (entry-added, toast) must come from an extension page or the worker,
+//    never from a tab;
+//  - area-select results must come from the top frame of the tab we
+//    injected the overlay into.
+// ---------------------------------------------------------------------------
+
+/** The MessageSender fields we look at (keeps the helpers pure and testable). */
+export interface SenderLike {
+  id?: string | undefined;
+  tab?: { id?: number | undefined } | undefined;
+  frameId?: number | undefined;
+}
+
+/**
+ * Sent by our worker or one of our extension pages (side panel), not by a
+ * content script. Content-script messages always carry `sender.tab`. (An
+ * extension page opened in a tab also has `sender.tab`, and is refused too:
+ * the panel is never a tab.)
+ */
+export function isTrustedExtensionSender(sender: SenderLike, runtimeId: string): boolean {
+  return Boolean(runtimeId) && sender.id === runtimeId && !sender.tab;
+}
+
+/** Sent from the top frame (frameId 0) of tab `tabId`. */
+export function isTopFrameOfTab(sender: SenderLike, tabId: number): boolean {
+  return sender.tab?.id === tabId && sender.frameId === 0;
+}
+
+// ---------------------------------------------------------------------------
 // Sending
 // ---------------------------------------------------------------------------
 

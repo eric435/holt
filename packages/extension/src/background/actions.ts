@@ -11,9 +11,9 @@
 
 import type { Entry, PageContext, ScreenshotMode } from "@nitpick/protocol";
 import { ApiError, getApi } from "../shared/api.js";
-import { errorMessage, type AreaSelectedMessage, type CaptureResponse } from "../shared/messages.js";
+import { errorMessage, isTopFrameOfTab, type AreaSelectedMessage, type CaptureResponse } from "../shared/messages.js";
 import { pageContextFromTab } from "../shared/page-context.js";
-import { clearState, getState } from "../shared/state.js";
+import { clearState, getState, type PendingArea } from "../shared/state.js";
 import { captureArea, startAreaSelection } from "./capture/area.js";
 import { captureFullPage } from "./capture/full-page.js";
 import { captureViewportPng, decode } from "./capture/viewport.js";
@@ -77,19 +77,31 @@ export function takeScreenshot(mode: ScreenshotMode, tab: chrome.tabs.Tab): Prom
   });
 }
 
+/**
+ * The pending selection, if `sender` is the top frame of the tab we injected
+ * the overlay into (and it hasn't expired). Anything else is ignored without
+ * touching the pending state, so a forged message can't cancel a real
+ * selection.
+ */
+async function pendingAreaFor(sender: chrome.runtime.MessageSender): Promise<PendingArea | null> {
+  const pending = await getState("pendingArea");
+  if (!pending || !isTopFrameOfTab(sender, pending.tabId)) return null;
+  return pending;
+}
+
 /** Called when the area-select overlay reports a rectangle. */
 export function finishAreaSelection(selection: AreaSelectedMessage, sender: chrome.runtime.MessageSender): Promise<void> {
   return exclusive(async () => {
-    const pending = await getState("pendingArea");
+    const pending = await pendingAreaFor(sender);
+    if (!pending) return;
     await clearState("pendingArea");
     try {
-      const tab = sender.tab;
-      if (!pending || !tab || tab.id !== pending.tabId || Date.now() - pending.startedAt > AREA_SELECTION_TTL_MS) {
+      if (Date.now() - pending.startedAt > AREA_SELECTION_TTL_MS) {
         throw new Error("This area selection has expired. Start it again.");
       }
       const shot = await captureArea(pending.windowId, selection);
       // Prefer the tab's current title (SPA may have changed it), else what we stored.
-      const page = tab.url ? pageContextFromTab(tab) : pending.page;
+      const page = sender.tab?.url ? pageContextFromTab(sender.tab) : pending.page;
       await upload(shot, "area", page);
     } catch (error) {
       await notifyToast("error", describe(error));
@@ -97,7 +109,8 @@ export function finishAreaSelection(selection: AreaSelectedMessage, sender: chro
   });
 }
 
-export async function cancelAreaSelection(): Promise<void> {
+export async function cancelAreaSelection(sender: chrome.runtime.MessageSender): Promise<void> {
+  if (!(await pendingAreaFor(sender))) return;
   await clearState("pendingArea");
   await notifyToast("info", "Area selection cancelled.");
 }

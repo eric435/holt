@@ -18,12 +18,19 @@ import {
   isAreaCancelledMessage,
   isAreaSelectedMessage,
   isCaptureRequest,
+  isTrustedExtensionSender,
   onMessage,
   type CaptureResponse,
   type Message,
 } from "../shared/messages.js";
+import { migrateFromSync, restrictStorageAccess } from "../shared/settings.js";
 import { cancelAreaSelection, finishAreaSelection, takeScreenshot } from "./actions.js";
 import { handleCommand, openSidePanel } from "./commands.js";
+
+// Before anything else touches settings: make storage.local/sync readable
+// only by the worker and extension pages (not content scripts), and move
+// legacy settings out of storage.sync. Neither blocks listener registration.
+void restrictStorageAccess().then(migrateFromSync);
 
 // ---------------------------------------------------------------------------
 // Listeners: top level, synchronous. Do not move these into an async function.
@@ -34,18 +41,22 @@ chrome.commands.onCommand.addListener(handleCommand);
 onMessage((message: Message, sender) => {
   switch (message.type) {
     case "capture":
-      // From the side panel. Validate anyway: cheap, and keeps the shape honest.
+      // Only from the side panel: a content script (i.e. a web page) must
+      // not be able to trigger captures. Validate the shape too.
+      if (!isTrustedExtensionSender(sender, chrome.runtime.id)) return { ok: false, error: "Capture requests must come from the side panel." };
       if (!isCaptureRequest(message)) return { ok: false, error: "Malformed capture request." };
       return handleCaptureRequest(message.windowId, message.mode);
 
     case "area-selected":
-      // From a content script, i.e. from inside a web page: validate every field.
+      // From the overlay content script, i.e. from inside a web page:
+      // validate every field here, and the sender (top frame of the tab we
+      // injected into) in finishAreaSelection, which knows that tab.
       if (!isAreaSelectedMessage(message)) return { ok: true };
       void finishAreaSelection(message, sender);
       return { ok: true };
 
     case "area-cancelled":
-      if (isAreaCancelledMessage(message)) void cancelAreaSelection();
+      if (isAreaCancelledMessage(message)) void cancelAreaSelection(sender);
       return { ok: true };
 
     default:

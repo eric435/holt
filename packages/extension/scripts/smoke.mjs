@@ -7,9 +7,10 @@
  *      and load the extension (see lib/chrome.mjs for how and why).
  *   2. Fail on any console.error / uncaught exception in the worker within ~3 s.
  *   3. Extra checks: commands registered, the side panel page renders without
- *      errors, the on-demand content scripts work on a local fixture page
+ *      errors and migrates legacy storage.sync settings to storage.local, the on-demand content scripts work on a local fixture page
  *      (page-helper metrics/scroll/restore incl. hiding and restoring the
- *      fixed header, area-select overlay idempotency
+ *      fixed header; content scripts can't read storage and their forged
+ *      capture/toast messages are refused; area-select overlay idempotency
  *      and the Esc-cancel round trip back to the panel as a toast), and a
  *      simulated toolbar click both opens the side panel and grants
  *      activeTab (captureVisibleTab succeeds), and page-helper metrics taken
@@ -84,6 +85,9 @@ async function run(headless) {
     log(`commands: ${commands.join(", ")}; openPanelOnActionClick=${behavior?.openPanelOnActionClick}`);
 
     // ---- 3. side panel page (opened as a tab: same page, same code) ---------
+    // Seed legacy settings in storage.sync (where earlier builds kept them):
+    // the panel must migrate them to storage.local on load.
+    await evaluate(cdp, worker.sessionId, `chrome.storage.sync.set({ serverUrl: "http://localhost:4999", keepAudio: false })`);
     const panelUrl = `chrome-extension://${worker.extensionId}/sidepanel.html`;
     const { targetId: panelTarget } = await cdp.send("Target.createTarget", { url: "about:blank" });
     const panel = await attach(cdp, panelTarget);
@@ -95,6 +99,11 @@ async function run(headless) {
     expect(panelText.includes("Capture") && panelText.includes("Settings"), "side panel did not render its sections");
     const serverLine = await evaluate(cdp, panel, "document.querySelector('.server-line')?.innerText ?? ''");
     log(`side panel rendered; server line: "${serverLine.replace(/\s+/g, " ").slice(0, 120)}"`);
+    const stores = await evaluate(cdp, worker.sessionId, `Promise.all([chrome.storage.sync.get(null), chrome.storage.local.get(null)])`);
+    expect(Object.keys(stores[0]).length === 0, `storage.sync still has settings after migration: ${JSON.stringify(stores[0])}`);
+    expect(stores[1].serverUrl === "http://localhost:4999" && stores[1].keepAudio === false, `settings not migrated to storage.local: ${JSON.stringify(stores[1])}`);
+    expect(serverLine.includes("localhost:4999"), "panel is not using the migrated server URL");
+    log(`settings migration: sync -> local ${JSON.stringify(stores[1])}; sync now ${JSON.stringify(stores[0])}`);
 
     // ---- 4. content scripts on a fixture page ------------------------------
     const fixture = await startFixtureServer();
@@ -126,11 +135,35 @@ async function run(headless) {
           await chrome.tabs.sendMessage(tab.id, { type: "helper:restore" });
           const [{ result: headerAfterRestore }] = await headerState();
           const [{ result: afterRestore }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => scrollY });
+          // Security probes, run as a content script (isolated world) in the page:
+          // storage must be off limits, forged capture/toast must be refused.
+          const [{ result: probes }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: async (windowId) => {
+              let storage;
+              try {
+                await chrome.storage.local.get("token");
+                storage = "readable";
+              } catch (e) {
+                storage = "denied: " + e.message;
+              }
+              const capture = await chrome.runtime.sendMessage({ type: "capture", mode: "viewport", windowId })
+                .catch((e) => ({ error: e.message }));
+              const toast = await chrome.runtime.sendMessage({ type: "toast", level: "error", message: "forged-by-content-script" })
+                .then((r) => ({ answered: r }), (e) => ({ error: e.message }));
+              return { storage, capture, toast };
+            },
+            args: [tab.windowId],
+          });
+          // What startAreaSelection would record before injecting the overlay,
+          // so the Esc below is accepted as coming from the pending tab.
+          await chrome.storage.session.set({ pendingArea: { tabId: tab.id, windowId: tab.windowId,
+            page: { url: tab.url, title: tab.title }, startedAt: Date.now() } });
           await inject("content/area-select.js");
           await inject("content/area-select.js");
           const [{ result: overlays }] = await chrome.scripting.executeScript({
             target: { tabId: tab.id }, func: () => document.querySelectorAll("nitpick-area-select").length });
-          return { title: tab.title, metrics, scrolled, afterRestore, overlays, headerWhileHidden, headerAfterRestore };
+          return { title: tab.title, metrics, scrolled, afterRestore, overlays, headerWhileHidden, headerAfterRestore, probes };
         })()`,
       );
       if (result.error) {
@@ -148,6 +181,12 @@ async function run(headless) {
         log(`pinned elements: hid ${result.scrolled.hiddenCount} (${result.headerWhileHidden.split("|")[0]}), after restore "${result.headerAfterRestore}"`);
         expect(result.overlays === 1, `area-select injected twice should give 1 overlay, got ${result.overlays}`);
 
+        const { probes } = result;
+        expect(probes.storage.startsWith("denied"), `content scripts can read chrome.storage.local (${probes.storage})`);
+        expect(probes.capture?.ok === false && /side panel/.test(probes.capture.error ?? ""), `forged capture from a content script was not refused: ${JSON.stringify(probes.capture)}`);
+        expect(!probes.toast.answered, `forged toast from a content script was answered: ${JSON.stringify(probes.toast)}`);
+        log(`content-script probes: storage ${probes.storage.slice(0, 60)}; capture -> ${JSON.stringify(probes.capture)}; toast -> ${probes.toast.error ?? (probes.toast.answered === undefined ? "no response (ignored)" : JSON.stringify(probes.toast.answered))}`);
+
         // Press Esc in the page: overlay removes itself, sends area-cancelled,
         // the worker broadcasts a toast, and the open panel shows it.
         await cdp.send("Page.bringToFront", {}, page);
@@ -159,6 +198,8 @@ async function run(headless) {
         expect(overlaysAfterEsc === 0, "Esc did not remove the area-select overlay");
         const toastSeen = await evaluate(cdp, panel, "document.getElementById('toasts').innerText.includes('Area selection cancelled')");
         expect(toastSeen, "panel did not receive the 'area selection cancelled' toast from the worker");
+        const forgedShown = await evaluate(cdp, panel, "document.getElementById('toasts').innerText.includes('forged-by-content-script')");
+        expect(!forgedShown, "panel displayed a toast forged by a content script");
         log(`area-select: 1 overlay after double injection; Esc removed it=${overlaysAfterEsc === 0}; panel toast=${toastSeen}`);
       }
 

@@ -267,7 +267,7 @@ try {
   });
   await cdp.send("Network.enable", {}, worker.sessionId);
 
-  await evaluate(cdp, worker.sessionId, `chrome.storage.sync.set({ serverUrl: ${JSON.stringify(origin)} })`);
+  await evaluate(cdp, worker.sessionId, `chrome.storage.local.set({ serverUrl: ${JSON.stringify(origin)} })`);
 
   const { targetId: pageTarget } = await cdp.send("Target.createTarget", { url: pageUrl });
   const page = await attach(cdp, pageTarget);

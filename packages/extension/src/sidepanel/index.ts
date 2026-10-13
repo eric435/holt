@@ -13,7 +13,7 @@
  */
 
 import type { Entry } from "@nitpick/protocol";
-import { isEntryAddedMessage, isToastMessage, onMessage } from "../shared/messages.js";
+import { isEntryAddedMessage, isToastMessage, isTrustedExtensionSender, onMessage } from "../shared/messages.js";
 import { loadSettings, onSettingsChanged } from "../shared/settings.js";
 import { clearState, getState as getStoredState, onStateChanged, type PanelInboxItem } from "../shared/state.js";
 import { getState, update } from "./store.js";
@@ -47,7 +47,10 @@ function announce(entry: Entry): void {
 // Listen for worker broadcasts right away, before any await, so a broadcast
 // that arrives while we are still booting isn't treated as "panel closed".
 mountToasts(section("toasts"));
-onMessage((message) => {
+onMessage((message, sender) => {
+  // Broadcasts are only believed from our worker. Content scripts' messages
+  // reach this listener too (they carry sender.tab) and are not ours.
+  if (!isTrustedExtensionSender(sender, chrome.runtime.id)) return undefined;
   if (isEntryAddedMessage(message)) {
     update({ session: message.session });
     announce(message.entry);
