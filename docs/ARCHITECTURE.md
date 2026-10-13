@@ -139,11 +139,31 @@ src/
                   page's world, so it is kept tiny and sends results back to
                   the service worker and exits.
   shared/         typed message bus between the three contexts, settings
-                  (server URL, token), and the server API client. The client
-                  is shared because Blobs cannot be passed between extension
-                  contexts cheaply: the worker uploads screenshots it took,
-                  the side panel uploads recordings it made.
+                  (server URL, token), the chrome.storage.session wrapper,
+                  and the server API client. The client is shared because
+                  Blobs cannot be passed between extension contexts cheaply:
+                  the worker uploads screenshots it took, the side panel
+                  uploads recordings it made.
+  permissions/    a plain extension page opened in a tab the first time the
+                  microphone is needed, because Chrome may not show the
+                  permission prompt inside a side panel.
 ```
+
+Two MV3 details that shaped the code and are worth knowing:
+
+- **The worker can die at any time.** Chrome kills an idle service worker
+  after about 30 seconds, and module-level variables vanish with it. An
+  area selection (user is still dragging) therefore stores "what I was
+  doing" in `chrome.storage.session` and finishes in whatever worker
+  instance receives the content script's reply. Hotkeys meant for the
+  panel (start voice note, focus the note field) are handed over the same
+  way, because the panel may not be open yet when the hotkey fires.
+- **User gestures are consumed synchronously.** `chrome.sidePanel.open()`
+  must be called before the first `await` in a command or click handler.
+  And the declarative `openPanelOnActionClick` flag is deliberately *off*:
+  with it on, clicking the toolbar icon opens the panel but does not grant
+  `activeTab`, so captures from the panel would fail. Handling the click in
+  `chrome.action.onClicked` gives both.
 
 Permissions are the minimum: `activeTab` (granted by a hotkey or clicking the
 icon, scoped to that tab, no host permissions), `sidePanel`, `scripting`,
