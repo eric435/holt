@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SERVER_URL, isLoopbackHost, normalizeSettings, planSyncMigration, validateServerUrl } from "./settings.js";
+import { DEFAULT_SERVER_URL, DEFAULT_SETTINGS, isLoopbackHost, normalizeMicrophone, normalizeSettings, planSyncMigration, validateServerUrl } from "./settings.js";
 
 describe("validateServerUrl", () => {
   it("accepts the default", () => {
@@ -53,21 +53,56 @@ describe("isLoopbackHost", () => {
 
 describe("normalizeSettings", () => {
   it("fills defaults", () => {
-    expect(normalizeSettings({})).toEqual({ serverUrl: DEFAULT_SERVER_URL, token: "", keepAudio: true });
-  });
-  it("drops invalid stored values", () => {
-    expect(normalizeSettings({ serverUrl: "ftp://x", token: 42, keepAudio: "yes" })).toEqual({
+    expect(normalizeSettings({})).toEqual({
       serverUrl: DEFAULT_SERVER_URL,
       token: "",
       keepAudio: true,
+      microphoneId: "",
+      microphoneLabel: "",
+      hideShortcutHint: false,
     });
+    expect(normalizeSettings({})).toEqual(DEFAULT_SETTINGS);
+  });
+  it("drops invalid stored values", () => {
+    expect(normalizeSettings({ serverUrl: "ftp://x", token: 42, keepAudio: "yes", microphoneId: 7, microphoneLabel: "x", hideShortcutHint: "true" })).toEqual(
+      DEFAULT_SETTINGS,
+    );
   });
   it("keeps valid stored values", () => {
-    expect(normalizeSettings({ serverUrl: "http://localhost:5173/", token: " s3cret ", keepAudio: false })).toEqual({
+    expect(
+      normalizeSettings({
+        serverUrl: "http://localhost:5173/",
+        token: " s3cret ",
+        keepAudio: false,
+        microphoneId: "abc123",
+        microphoneLabel: " USB Mic ",
+        hideShortcutHint: true,
+      }),
+    ).toEqual({
       serverUrl: "http://localhost:5173",
       token: "s3cret",
       keepAudio: false,
+      microphoneId: "abc123",
+      microphoneLabel: "USB Mic",
+      hideShortcutHint: true,
     });
+  });
+});
+
+describe("normalizeMicrophone", () => {
+  it("treats empty, blank and Chrome's 'default' alias as the system default", () => {
+    for (const id of ["", "   ", "default"]) {
+      expect(normalizeMicrophone(id, "Some label")).toEqual({ microphoneId: "", microphoneLabel: "" });
+    }
+  });
+  it("keeps an id with or without a label", () => {
+    expect(normalizeMicrophone("dev-1", "Headset")).toEqual({ microphoneId: "dev-1", microphoneLabel: "Headset" });
+    expect(normalizeMicrophone("dev-1", undefined)).toEqual({ microphoneId: "dev-1", microphoneLabel: "" });
+  });
+  it("drops non-strings and absurdly long ids, and caps the label", () => {
+    expect(normalizeMicrophone(42, "x")).toEqual({ microphoneId: "", microphoneLabel: "" });
+    expect(normalizeMicrophone("x".repeat(513), "x")).toEqual({ microphoneId: "", microphoneLabel: "" });
+    expect(normalizeMicrophone("dev", "y".repeat(500)).microphoneLabel).toHaveLength(200);
   });
 });
 

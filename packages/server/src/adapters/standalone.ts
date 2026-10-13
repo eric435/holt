@@ -15,6 +15,7 @@ import { BASE_PATH, TOKEN_HEADER } from "@nitpick/protocol";
 import type { Nitpick } from "../core.js";
 import { isLoopbackHostname } from "../http/cors.js";
 import { sendJson } from "../http/errors.js";
+import { describeProject } from "../config/project.js";
 import { createConsoleLogger, type Logger } from "../log.js";
 import { VERSION } from "../version.js";
 
@@ -135,7 +136,7 @@ function formatHost(host: string): string {
 }
 
 function printBanner(logger: Logger, { config }: Nitpick, url: string): void {
-  logger.info(`v${VERSION} listening on ${url}${BASE_PATH}`);
+  logger.info(`v${VERSION} serving ${describeProject(config.project)} at ${url}${BASE_PATH}`);
   logger.info(`Writing sessions to ${config.outputDir}`);
   if (config.configFile) logger.info(`Config: ${config.configFile}`);
   logger.info(`Connect: open the nitpick extension's side panel and set the server URL to ${url}`);

@@ -2,8 +2,10 @@
  * `nitpick init`: write a starter nitpick.config.json.
  *
  * Every key is written out with its default value, so the file doubles as
- * documentation, and `$schema` points at the schema shipped in the package
- * for editor autocomplete and hover docs.
+ * documentation (except `projectName`, whose default is derived from
+ * package.json, and `allowedExtensionIds`, which differs per install), and
+ * `$schema` points at the schema shipped in the package for editor
+ * autocomplete and hover docs.
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";

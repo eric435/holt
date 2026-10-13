@@ -50,6 +50,9 @@ async function status(_req: IncomingMessage, { config, sessions }: RouteContext)
     ok: true,
     name: "nitpick",
     version: VERSION,
+    // A copy, so a route can never hand out (and a test never mutate) the
+    // config's own object.
+    project: { ...config.project },
     session: sessions.current,
     config: {
       outputDir: displayPath(config.root, config.outputDir),

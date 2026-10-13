@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DEFAULT_MAX_UPLOAD_BYTES, DEFAULT_PORT } from "@nitpick/protocol";
@@ -29,6 +29,7 @@ describe("loadConfig", () => {
       token: null,
       maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
       sessionTitle: "QA session",
+      project: { name: path.basename(dir), source: "directory" },
       allowedOrigins: [],
       allowedExtensionIds: [],
       configFile: null,
@@ -58,6 +59,46 @@ describe("loadConfig", () => {
     await writeConfig({ allowedExtensionIds: ["abcdefghijklmnopabcdefghijklmnop"] });
     const { config } = await loadConfig(dir);
     expect(config.allowedExtensionIds).toEqual(["abcdefghijklmnopabcdefghijklmnop"]);
+  });
+
+  describe("project", () => {
+    const writePackageJson = (content: string) => writeFile(path.join(dir, "package.json"), content);
+
+    it("uses the package.json name", async () => {
+      await writePackageJson(JSON.stringify({ name: "@acme/web" }));
+      const { config, warnings } = await loadConfig(dir);
+      expect(config.project).toEqual({ name: "@acme/web", source: "package.json" });
+      expect(warnings).toEqual([]);
+    });
+
+    it("lets projectName from the file, then from overrides, win over package.json", async () => {
+      await writePackageJson(JSON.stringify({ name: "acme" }));
+      await writeConfig({ projectName: "From file" });
+      expect((await loadConfig(dir)).config.project).toEqual({ name: "From file", source: "config" });
+      expect((await loadConfig(dir, { projectName: " From flag " })).config.project).toEqual({
+        name: "From flag",
+        source: "config",
+      });
+    });
+
+    it("falls back to the directory name with a warning when package.json is not JSON", async () => {
+      await writePackageJson("{ not json");
+      const { config, warnings } = await loadConfig(dir);
+      expect(config.project).toEqual({ name: path.basename(dir), source: "directory" });
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toMatch(/package\.json is not valid JSON/);
+    });
+
+    it("does not read package.json from a parent directory", async () => {
+      await writePackageJson(JSON.stringify({ name: "parent" }));
+      const child = path.join(dir, "child-app");
+      await mkdir(child);
+      expect((await loadConfig(child)).config.project).toEqual({ name: "child-app", source: "directory" });
+    });
+
+    it("rejects an invalid projectName instead of falling back", async () => {
+      await expect(loadConfig(dir, { projectName: "a\u001b[2Jb" })).rejects.toThrow(/"projectName" must not contain/);
+    });
   });
 
   it("keeps an absolute outputDir as is", async () => {

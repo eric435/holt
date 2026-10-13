@@ -15,13 +15,16 @@
  * extension contexts (worker + extension pages), not to content scripts that
  * run inside web pages.
  *
- * It is also how the worker hands things to the side panel when the panel
- * may not be loaded yet (the "panel inbox"): the panel reads the inbox on
- * startup and listens for changes afterwards, so there is no race between
- * "worker opens the panel" and "panel starts listening for messages".
+ * It is also the source of truth for "what is recording right now"
+ * (`recordingScreen`, `recordingVoice`): the recorders run in the offscreen
+ * document, which has no chrome.storage, so the worker mirrors their state
+ * here; a restarted worker, the side panel and the toolbar indicator all read
+ * it from here. The two recordings use separate keys on purpose: the panel
+ * (window/screen recording) and the worker (tab recording, voice) write them
+ * independently, and one key per writer avoids lost read-modify-write updates.
  *
- * This lives in shared/ (not background/) because the side panel reads and
- * writes the same keys.
+ * This lives in shared/ (not background/) because the side panel and the
+ * note popup read and write the same keys.
  */
 
 import type { Entry, PageContext, ScreenshotMode } from "@nitpick/protocol";
@@ -34,15 +37,51 @@ export interface PendingArea {
   startedAt: number;
 }
 
-/** Commands the worker forwards to the side panel. */
-export type PanelCommand = "open-panel" | "toggle-recording" | "toggle-voice" | "quick-note";
-
-export interface PanelInboxItem {
+/**
+ * A running tab or window/screen recording.
+ *  - "tab": chrome.tabCapture in the offscreen document (started by the
+ *    worker; survives the panel closing).
+ *  - "display": getDisplayMedia in the side panel (the picker needs a click
+ *    in a document; dies with the panel).
+ */
+export interface ScreenRecordingState {
+  /** Random id, so late events from an older recording can't clear a newer one. */
   id: string;
-  command: PanelCommand;
+  source: "tab" | "display";
+  startedAt: number;
+  page: PageContext;
+  /** The captured tab ("tab" source only). */
+  tabId?: number;
+}
+
+/** A running voice note (offscreen document). */
+export interface VoiceRecordingState {
+  id: string;
+  startedAt: number;
+  page: PageContext;
+  /** Label of the microphone in use, if known ("" = system default). */
+  microphoneLabel: string;
+  /** The selected microphone was missing, so the default is used. */
+  microphoneFallback?: boolean;
+}
+
+/** Both recording slots, as read together by the indicator and the panel. */
+export interface RecordingState {
+  screen?: ScreenRecordingState | undefined;
+  voice?: VoiceRecordingState | undefined;
+}
+
+/** What the worker hands the note popup: the page the user was on when they pressed the shortcut. */
+export interface NoteContext {
+  page: PageContext;
+  /** Window the note was requested in (the popup may be in its own window). */
+  windowId: number;
   at: number;
-  /** Only the panel in this window should react (each window has its own panel). */
-  windowId?: number;
+}
+
+/** What the side panel last learned about the server, for the toolbar tooltip. */
+export interface ServerInfo {
+  projectName: string;
 }
 
 /** An entry shown in the panel's list (kept so the list survives closing the panel). */
@@ -54,8 +93,11 @@ export interface RecentEntry {
 
 interface SessionState {
   pendingArea: PendingArea;
-  panelInbox: PanelInboxItem;
   recentEntries: RecentEntry[];
+  recordingScreen: ScreenRecordingState;
+  recordingVoice: VoiceRecordingState;
+  noteContext: NoteContext;
+  serverInfo: ServerInfo;
 }
 
 export type StateKey = keyof SessionState;
@@ -95,8 +137,18 @@ export async function addRecentEntry(item: RecentEntry): Promise<void> {
   await setState("recentEntries", next);
 }
 
-export async function postToPanelInbox(command: PanelCommand, windowId: number | undefined): Promise<void> {
-  const item: PanelInboxItem = { id: crypto.randomUUID(), command, at: Date.now() };
-  if (windowId !== undefined) item.windowId = windowId;
-  await setState("panelInbox", item);
+/** Both recording slots in one read. */
+export async function getRecordingState(): Promise<RecordingState> {
+  const result = await chrome.storage.session.get(["recordingScreen", "recordingVoice"]);
+  return {
+    screen: result.recordingScreen as ScreenRecordingState | undefined,
+    voice: result.recordingVoice as VoiceRecordingState | undefined,
+  };
+}
+
+/** Call `listener` with both slots whenever either changes, in any context. */
+export function onRecordingStateChanged(listener: (state: RecordingState) => void): void {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "session" && (changes.recordingScreen || changes.recordingVoice)) void getRecordingState().then(listener);
+  });
 }

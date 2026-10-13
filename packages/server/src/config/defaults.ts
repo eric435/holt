@@ -33,6 +33,20 @@ export const MAX_JSON_BYTES = 256 * 1024;
 export const MAX_TITLE_LENGTH = 200;
 
 /**
+ * Longest project name, in UTF-16 code units. Matches the protocol's
+ * `ProjectInfo.name` limit: the extension shows it in one line of the panel.
+ * (`projectName` has no entry in DEFAULTS: when unset, the name is derived
+ * from package.json or the directory; see config/project.ts.)
+ */
+export const MAX_PROJECT_NAME_LENGTH = 100;
+
+/**
+ * Largest package.json we read to find the project name. Real ones are a
+ * few KiB; anything bigger is skipped rather than buffered.
+ */
+export const MAX_PACKAGE_JSON_BYTES = 1024 * 1024;
+
+/**
  * Most uploads that may wait for their entry within one session. The
  * extension posts the entry right after each upload, so a real client never
  * gets near this; it only stops a misbehaving one from filling the disk

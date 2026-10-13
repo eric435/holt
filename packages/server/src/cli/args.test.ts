@@ -13,10 +13,13 @@ describe("parseCliArgs", () => {
 
   it("maps flags to config overrides", () => {
     expect(
-      parseCliArgs(["--port", "5000", "--host", "localhost", "--out", "notes", "--token", "t", "--config", "x.json"]),
+      parseCliArgs([
+        "--port", "5000", "--host", "localhost", "--out", "notes", "--token", "t", "--config", "x.json",
+        "--project-name", "@acme/web",
+      ]),
     ).toEqual({
       command: "serve",
-      overrides: { port: 5000, host: "localhost", outputDir: "notes", token: "t" },
+      overrides: { port: 5000, host: "localhost", outputDir: "notes", token: "t", projectName: "@acme/web" },
       configFile: "x.json",
     });
   });

@@ -8,11 +8,16 @@
  * Relative paths (outputDir, --config) resolve against the project root
  * (`cwd`), not the config file's folder: the config file normally lives in
  * the root anyway, and one rule is easier to remember than two.
+ *
+ * The project identity (`config.project`) is resolved here too, once, so
+ * every consumer (status route, banners) sees the same answer and nothing
+ * re-reads package.json per request. See project.ts for the rules.
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG_FILE_NAME } from "@nitpick/protocol";
 import { DEFAULTS } from "./defaults.js";
+import { readPackageJson, resolveProject } from "./project.js";
 import type { NitpickConfig, ResolvedConfig } from "./types.js";
 import { ConfigError, validateConfig } from "./validate.js";
 
@@ -66,6 +71,14 @@ export async function loadConfig(
 
   const merged = { ...DEFAULTS, ...fromFile, ...fromOverrides.config };
 
+  const { project, warning } = resolveProject({
+    root,
+    projectName: merged.projectName,
+    // Skip the read entirely when the name is configured.
+    packageJson: merged.projectName === undefined ? await readPackageJson(root) : null,
+  });
+  if (warning !== undefined) warnings.push(warning);
+
   return {
     config: {
       root,
@@ -75,6 +88,7 @@ export async function loadConfig(
       token: merged.token,
       maxUploadBytes: merged.maxUploadBytes,
       sessionTitle: merged.sessionTitle,
+      project,
       allowedOrigins: [...merged.allowedOrigins],
       allowedExtensionIds: [...merged.allowedExtensionIds],
       configFile,

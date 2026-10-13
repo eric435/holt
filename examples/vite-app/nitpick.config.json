@@ -1,5 +1,6 @@
 {
   "$schema": "./node_modules/nitpick-notes/schema.json",
   "outputDir": "qa",
-  "sessionTitle": "Example app QA"
+  "sessionTitle": "Example app QA",
+  "projectName": "vite-app"
 }

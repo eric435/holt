@@ -3,8 +3,8 @@
  *
  * Why not a schema library (zod, ajv, ...)? This package is installed into
  * other people's projects, and every runtime dependency is supply-chain
- * surface for them (see docs/SECURITY.md). The config has seven keys; a few
- * `typeof` checks are easier to audit than a dependency tree.
+ * surface for them (see docs/SECURITY.md). The config has a handful of keys;
+ * a few `typeof` checks are easier to audit than a dependency tree.
  *
  * Rules:
  *  - Every error names the key, the expected type, and what was found, and
@@ -14,6 +14,8 @@
  *  - The result only contains keys that were actually set, so callers can
  *    merge layers (defaults < file < overrides) with a plain object spread.
  */
+import { MAX_PROJECT_NAME_LENGTH } from "./defaults.js";
+import { hasUnsafeChars } from "./project.js";
 import type { NitpickConfig } from "./types.js";
 
 export class ConfigError extends Error {
@@ -32,6 +34,26 @@ const isString = (v: unknown): v is string => typeof v === "string";
 
 const nonEmptyString: Check = (v) =>
   isString(v) && v.trim() !== "" ? null : `must be a non-empty string (got ${describe(v)})`;
+
+/**
+ * The project name is shown in the extension and printed in the startup
+ * banner, so on top of "non-empty" it must fit on one line and contain no
+ * control characters (a terminal would interpret an ANSI escape). We reject
+ * rather than strip here: a value the user typed should not be silently
+ * changed. Names read from package.json are stripped instead (project.ts).
+ */
+const projectName: Check = (v) => {
+  const problem = nonEmptyString(v);
+  if (problem) return problem;
+  const name = (v as string).trim();
+  if (name.length > MAX_PROJECT_NAME_LENGTH) {
+    return `must be at most ${MAX_PROJECT_NAME_LENGTH} characters (got ${name.length})`;
+  }
+  if (hasUnsafeChars(name)) {
+    return `must not contain control, zero-width or bidi characters (got ${JSON.stringify(name)})`;
+  }
+  return null;
+};
 
 const portNumber: Check = (v) =>
   typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 65535
@@ -106,6 +128,7 @@ const CHECKS: Record<keyof NitpickConfig, Check> = {
   token: tokenValue,
   maxUploadBytes: positiveInteger,
   sessionTitle: nonEmptyString,
+  projectName,
   allowedOrigins: originList,
   allowedExtensionIds: extensionIdList,
 };

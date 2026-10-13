@@ -1,9 +1,11 @@
 /**
- * Typed notes: a textarea, submitted with the button or Cmd/Ctrl+Enter.
+ * Typed notes: a textarea. Enter saves, Shift+Enter starts a new line (the
+ * same keys as the Alt+T note popup; see shared/note-keys.ts).
  */
 
 import type { Entry } from "@nitpick/protocol";
 import { errorMessage } from "../../shared/messages.js";
+import { noteKeyAction } from "../../shared/note-keys.js";
 import { getActivePage } from "../page.js";
 import { postEntry } from "../upload.js";
 import { h, replace } from "./dom.js";
@@ -14,12 +16,11 @@ export interface NotesApi {
 }
 
 export function mountNotes(root: HTMLElement, onEntry: (entry: Entry) => void): NotesApi {
-  const isMac = navigator.platform.toLowerCase().includes("mac");
-  const textarea = h("textarea", { rows: 3, placeholder: "What's wrong on this page?", "aria-label": "Note" });
-  const submit = h("button", { onclick: () => void send() }, `Add note (${isMac ? "⌘" : "Ctrl"}+Enter)`);
+  const textarea = h("textarea", { rows: 3, placeholder: "What's wrong on this page? (Shift+Enter for a new line)", "aria-label": "Note" });
+  const submit = h("button", { onclick: () => void send() }, "Add note (Enter)");
 
   textarea.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (noteKeyAction(e) === "save") {
       e.preventDefault();
       void send();
     }

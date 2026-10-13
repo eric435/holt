@@ -83,6 +83,17 @@ Key decisions:
   one, so "take a screenshot" is always a single action.
 - **Session folder naming**: `<outputDir>/<YYYY-MM-DD-HHMMSS>/`, local time.
   Files inside are `<seq>-<kind>.<ext>`, zero-padded to 3 digits.
+- **`GET /status` says which project it serves.** Besides the tool name and
+  server version, it returns `project: { name, source }`, so the side panel
+  can show "acme-web at http://127.0.0.1:4848" and you can tell two running
+  servers apart. The name is resolved once at startup
+  (`config/project.ts`): the `projectName` config option, else the `name`
+  in `<root>/package.json`, else the root directory's name. Parent
+  directories are never searched, so `examples/vite-app` in a monorepo is
+  named after itself, not the workspace. A missing, oversized (> 1 MiB) or
+  broken package.json just falls through to the directory name; it never
+  stops startup. Names are stripped of control and bidi characters and
+  capped at 100 characters. The startup banners print the same name.
 
 ### Markdown format
 
@@ -119,57 +130,97 @@ a thin capture client and the format can evolve in one place.
 
 ## The Chrome extension (`packages/extension`)
 
-Manifest V3. Three execution contexts, each with one job:
+Manifest V3. Four kinds of execution context, each with one job:
 
 ```
 src/
   background/     service worker. Owns nothing long-lived (MV3 workers are
                   killed when idle); state lives in chrome.storage.session.
                   Handles keyboard commands, takes screenshots
-                  (chrome.tabs.captureVisibleTab) and stitches full-page
-                  captures.
-  sidepanel/      the UI. Buttons for every action, status of the server and
-                  session, typed notes, and the media recorders (screen via
-                  getDisplayMedia, voice via getUserMedia + MediaRecorder,
-                  transcript via the Web Speech API). Recorders live here
-                  because MediaRecorder needs a document and a user gesture.
+                  (chrome.tabs.captureVisibleTab), stitches full-page
+                  captures, starts/stops the recorders, owns the offscreen
+                  document's lifecycle and the toolbar indicator.
+  offscreen/      the offscreen document: a hidden page the worker creates
+                  (chrome.offscreen, reason USER_MEDIA) while something is
+                  recording. Hosts the tab recorder (chrome.tabCapture stream
+                  + MediaRecorder) and the voice recorder (getUserMedia +
+                  MediaRecorder + Web Speech transcript), and uploads what
+                  they record. Survives the side panel being closed.
+  sidepanel/      the UI, optional since every action has a shortcut.
+                  Buttons, server/session status, typed notes, settings
+                  (incl. microphone), and the one panel-bound recorder:
+                  "Record a window or screen…" (getDisplayMedia needs a click
+                  in a visible document).
+  note/           note.html, the Alt+T quick-note popup.
   content/        injected on demand with chrome.scripting.executeScript
                   (never declared in the manifest): the area-select overlay
                   and the scroll helper for full-page capture. Runs in the
                   page's world, so it is kept tiny and sends results back to
                   the service worker and exits.
-  shared/         typed message bus between the three contexts, settings
-                  (server URL, token), the chrome.storage.session wrapper,
-                  and the server API client. The client is shared because
-                  Blobs cannot be passed between extension contexts cheaply:
-                  the worker uploads screenshots it took, the side panel
-                  uploads recordings it made.
-  permissions/    a plain extension page opened in a tab the first time the
-                  microphone is needed, because Chrome may not show the
-                  permission prompt inside a side panel.
+  shared/         typed message bus between the contexts, settings, the
+                  chrome.storage.session wrapper, MediaRecorder helpers, and
+                  the server API client. The client is shared because Blobs
+                  cannot be passed between extension contexts cheaply:
+                  whoever records something uploads it.
+  permissions/    a plain extension page opened in a tab when the microphone
+                  is needed: the offscreen document can never show a
+                  permission prompt (it is invisible), a tab can.
 ```
 
-Two MV3 details that shaped the code and are worth knowing:
+Three MV3 details that shaped the code and are worth knowing:
 
 - **The worker can die at any time.** Chrome kills an idle service worker
   after about 30 seconds, and module-level variables vanish with it. An
   area selection (user is still dragging) therefore stores "what I was
   doing" in `chrome.storage.session` and finishes in whatever worker
-  instance receives the content script's reply. Hotkeys meant for the
-  panel (start voice note, focus the note field) are handed over the same
-  way, because the panel may not be open yet when the hotkey fires.
+  instance receives the content script's reply. Recordings work the same
+  way: `recordingScreen` / `recordingVoice` in storage.session say what is
+  running, and the offscreen document's messages wake a new worker.
 - **User gestures are consumed synchronously.** `chrome.sidePanel.open()`
   must be called before the first `await` in a command or click handler.
   And the declarative `openPanelOnActionClick` flag is deliberately *off*:
   with it on, clicking the toolbar icon opens the panel but does not grant
   `activeTab`, so captures from the panel would fail. Handling the click in
-  `chrome.action.onClicked` gives both.
+  `chrome.action.onClicked` gives both. (`tabCapture.getMediaStreamId` and
+  `captureVisibleTab` only need the activeTab grant, which outlives the
+  gesture; `action.openPopup` is called synchronously anyway.)
+- **Offscreen documents only get `chrome.runtime`.** No storage, no action,
+  no tabs. So the worker sends the recorder everything it needs (server
+  URL, token, microphone, page context) with each start request, and the
+  recorder reports state changes, saved entries and errors back by message;
+  the worker updates storage.session, the indicator and the toasts.
+
+### Headless mode: recording from a shortcut
+
+```
+ Alt+D ──▶ worker: getMediaStreamId({ targetTabId }) ──┐
+                   write recordingScreen (storage.session)
+                   ensure offscreen doc (one per extension)
+                   "offscreen:start-tab" { streamId, page, settings } ──▶ offscreen:
+                                                          getUserMedia(chromeMediaSource: "tab")
+                                                          AudioContext: play tab audio back
+                                                          MediaRecorder …
+ Alt+D ──▶ worker: "offscreen:stop" ─────────────────────────▶ stop, "recorder:stopped" ──▶ worker clears state
+                                                          POST /media, POST /entries
+                                                          "entry-created" ──▶ worker: recent list,
+                                                                              panel toast or badge ✓
+                                                          "recorder:idle" ──▶ worker closes the doc
+```
+
+The side panel's "Record tab" and "Voice note" buttons send `recorder:toggle`
+to the worker and take exactly this path. The toolbar icon is the status
+indicator: "REC"/"MIC" badge, a red dot drawn on the icon, and a tooltip
+like "nitpick (acme-web): recording tab since 14:02 (⌥D to stop)". It is
+browser UI, so it never appears in screenshots or tab recordings.
 
 Permissions are the minimum: `activeTab` (granted by a hotkey or clicking the
 icon, scoped to that tab, no host permissions), `sidePanel`, `scripting`,
-and `storage`. Keyboard shortcuts come from the `commands` manifest key,
-which is not a permission. Network access to the local server uses
-`host_permissions` for `http://127.0.0.1/*` and `http://localhost/*` only.
+`storage`, `offscreen` (the recorders' hidden page) and `tabCapture`
+("Record tab": no picker, follows the tab across navigations, and only
+usable on a tab where the user invoked nitpick). Keyboard shortcuts come
+from the `commands` manifest key, which is not a permission. Network access
+to the local server uses `host_permissions` for `http://127.0.0.1/*` and
+`http://localhost/*` only.
 
 Message flow for a full-page screenshot, as an example:
 
@@ -179,15 +230,18 @@ Message flow for a full-page screenshot, as an example:
 3. Worker stitches the viewport PNGs with `OffscreenCanvas`.
 4. Worker `POST /media` (bytes) → gets `file`; `POST /entries` with the
    ScreenshotEntry referencing `file`.
-5. Worker broadcasts "entry added" → side panel updates its list.
+5. Worker broadcasts "entry added" → side panel updates its list (or, with
+   the panel closed, the toolbar badge flashes "✓").
 
 ## Why a side panel instead of in-page buttons
 
 Buttons injected into the page would need a content script on every site
-(broad host permissions), fight with the page's CSS, and reload on every
-navigation. The side panel is an extension page: it persists across
-navigations in that window, has its own origin (so microphone permission is
-asked once, for the extension), and can call `getDisplayMedia` from a click.
+(broad host permissions), fight with the page's CSS, reload on every
+navigation, and show up in screenshots and tab recordings. The side panel is
+an extension page: it persists across navigations in that window, has its
+own origin (so microphone permission is asked once, for the extension), and
+can call `getDisplayMedia` from a click. For the same reasons the
+"recording" indicator is the toolbar icon, not an in-page overlay.
 
 ## Configuration
 
@@ -201,9 +255,13 @@ asked once, for the extension), and can call `getDisplayMedia` from a click.
   "host": "127.0.0.1",
   "token": null,
   "maxUploadBytes": 209715200,
-  "sessionTitle": "QA session"
+  "sessionTitle": "QA session",
+  "projectName": "acme-web"
 }
 ```
+
+(`projectName` has no fixed default: when it is unset the server uses the
+package.json name or the directory name, as described above.)
 
 The config loader validates every key by hand (no schema library at runtime)
 and prints a clear message naming the bad key. The JSON schema file is shipped

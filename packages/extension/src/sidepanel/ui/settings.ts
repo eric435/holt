@@ -1,5 +1,7 @@
 /**
- * Settings (collapsible): server URL, token, keep-audio toggle.
+ * Settings (collapsible): server URL, token, keep-audio toggle (saved with
+ * the Save button), the microphone picker (saved as soon as it changes), and
+ * the current keyboard shortcuts.
  * Validation lives in shared/settings.ts so it is unit-tested.
  */
 
@@ -7,6 +9,8 @@ import { errorMessage } from "../../shared/messages.js";
 import { DEFAULT_SERVER_URL, saveSettings, validateServerUrl } from "../../shared/settings.js";
 import { getState, update } from "../store.js";
 import { h, replace } from "./dom.js";
+import { microphonePicker } from "./microphone.js";
+import { openShortcutsPage, shortcutList } from "./shortcuts.js";
 import { refreshStatus } from "./status.js";
 import { toast } from "./toast.js";
 
@@ -60,14 +64,8 @@ export function mountSettings(root: HTMLElement): void {
     `nitpick extension ${__NITPICK_VERSION__} · origin `,
     h("code", {}, location.origin),
     " · shortcuts: ",
-    h("a", { href: "#", onclick: openShortcuts }, "chrome://extensions/shortcuts"),
+    h("a", { href: "#", onclick: openShortcutsPage }, "chrome://extensions/shortcuts"),
   );
 
-  replace(root, h("details", {}, h("summary", {}, "Settings"), form, about));
-}
-
-function openShortcuts(e: Event): void {
-  e.preventDefault();
-  // Links to chrome:// URLs are blocked from pages, but extensions may open them as tabs.
-  void chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
+  replace(root, h("details", {}, h("summary", {}, "Settings"), form, microphonePicker(), shortcutList(), about));
 }

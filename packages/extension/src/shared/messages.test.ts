@@ -6,8 +6,18 @@ import {
   isCaptureRequest,
   isCssRect,
   isEntryAddedMessage,
+  isEntryCreatedMessage,
   isMessage,
   isNoReceiverError,
+  isOffscreenStartTabRequest,
+  isOffscreenStartVoiceRequest,
+  isOffscreenStopRequest,
+  isOwnPageSender,
+  isRecorderStoppedMessage,
+  isRecorderToastMessage,
+  isRecorderToggleRequest,
+  isRecorderTranscriptMessage,
+  isSenderPage,
   isTopFrameOfTab,
   isTrustedExtensionSender,
   isToastMessage,
@@ -118,5 +128,82 @@ describe("isTopFrameOfTab", () => {
     expect(isTopFrameOfTab({ tab: { id: 8 }, frameId: 0 }, 7)).toBe(false);
     expect(isTopFrameOfTab({ tab: { id: 7 } }, 7)).toBe(false);
     expect(isTopFrameOfTab({}, 7)).toBe(false);
+  });
+});
+
+describe("toast actions", () => {
+  it("accepts only known action ids", () => {
+    expect(isToastMessage({ type: "toast", level: "error", message: "x", action: "open-permissions" })).toBe(true);
+    expect(isToastMessage({ type: "toast", level: "error", message: "x", action: "open-shortcuts" })).toBe(true);
+    expect(isToastMessage({ type: "toast", level: "error", message: "x", action: "https://evil.example" })).toBe(false);
+    expect(isToastMessage({ type: "toast", level: "error", message: "x", action: 1 })).toBe(false);
+  });
+  it("recorder:toast has the same shape", () => {
+    expect(isRecorderToastMessage({ type: "recorder:toast", level: "info", message: "Uploading" })).toBe(true);
+    expect(isRecorderToastMessage({ type: "recorder:toast", level: "loud", message: "x" })).toBe(false);
+    expect(isRecorderToastMessage({ type: "toast", level: "info", message: "x" })).toBe(false);
+  });
+});
+
+describe("recorder messages", () => {
+  const settings = { serverUrl: "http://127.0.0.1:4848", token: "", keepAudio: true, microphoneId: "", microphoneLabel: "" };
+  const page = { url: "http://localhost/", title: "App" };
+
+  it("recorder:toggle", () => {
+    expect(isRecorderToggleRequest({ type: "recorder:toggle", recorder: "tab", windowId: 1 })).toBe(true);
+    expect(isRecorderToggleRequest({ type: "recorder:toggle", recorder: "voice", windowId: 1 })).toBe(true);
+    expect(isRecorderToggleRequest({ type: "recorder:toggle", recorder: "screen", windowId: 1 })).toBe(false);
+    expect(isRecorderToggleRequest({ type: "recorder:toggle", recorder: "tab" })).toBe(false);
+  });
+
+  it("offscreen:start-tab needs a stream id, page and full settings", () => {
+    const ok = { type: "offscreen:start-tab", id: "r1", streamId: "abc", page, settings };
+    expect(isOffscreenStartTabRequest(ok)).toBe(true);
+    expect(isOffscreenStartTabRequest({ ...ok, streamId: "" })).toBe(false);
+    expect(isOffscreenStartTabRequest({ ...ok, page: { url: "u" } })).toBe(false);
+    expect(isOffscreenStartTabRequest({ ...ok, settings: { ...settings, keepAudio: "yes" } })).toBe(false);
+  });
+
+  it("offscreen:start-voice and offscreen:stop", () => {
+    expect(isOffscreenStartVoiceRequest({ type: "offscreen:start-voice", id: "r1", page, settings })).toBe(true);
+    expect(isOffscreenStartVoiceRequest({ type: "offscreen:start-voice", id: "r1", page })).toBe(false);
+    expect(isOffscreenStopRequest({ type: "offscreen:stop", recorder: "voice" })).toBe(true);
+    expect(isOffscreenStopRequest({ type: "offscreen:stop", recorder: "all" })).toBe(false);
+  });
+
+  it("recorder:stopped, recorder:transcript, entry-created", () => {
+    expect(isRecorderStoppedMessage({ type: "recorder:stopped", recorder: "tab", id: "r1" })).toBe(true);
+    expect(isRecorderStoppedMessage({ type: "recorder:stopped", recorder: "tab" })).toBe(false);
+    expect(isRecorderTranscriptMessage({ type: "recorder:transcript", final: "a", interim: "" })).toBe(true);
+    expect(isRecorderTranscriptMessage({ type: "recorder:transcript", final: "a" })).toBe(false);
+    expect(isEntryCreatedMessage({ type: "entry-created", entry: { id: "e", seq: 3 }, session: { id: "s" } })).toBe(true);
+    expect(isEntryCreatedMessage({ type: "entry-created", entry: { id: "e", seq: "3" }, session: { id: "s" } })).toBe(false);
+    expect(isEntryCreatedMessage({ type: "entry-created", entry: { id: "e", seq: 3 } })).toBe(false);
+  });
+
+  it("all new types are known to isMessage", () => {
+    for (const type of ["entry-created", "recorder:toggle", "offscreen:start-tab", "offscreen:start-voice", "offscreen:stop", "offscreen:status", "recorder:stopped", "recorder:toast", "recorder:idle", "recorder:transcript"]) {
+      expect(isMessage({ type })).toBe(true);
+    }
+  });
+});
+
+describe("isOwnPageSender / isSenderPage", () => {
+  const ID = "abcdefghijklmnopabcdefghijklmnop";
+  const base = `chrome-extension://${ID}/`;
+  it("accepts our pages, also when shown in a tab (the note popup window)", () => {
+    expect(isOwnPageSender({ id: ID, url: `${base}note.html` }, ID)).toBe(true);
+    expect(isOwnPageSender({ id: ID, url: `${base}note.html?window=1`, tab: { id: 3 }, frameId: 0 }, ID)).toBe(true);
+  });
+  it("refuses content scripts (their url is the web page's) and other extensions", () => {
+    expect(isOwnPageSender({ id: ID, url: "http://localhost:5173/", tab: { id: 3 }, frameId: 0 }, ID)).toBe(false);
+    expect(isOwnPageSender({ id: "other", url: `chrome-extension://other/note.html` }, ID)).toBe(false);
+    expect(isOwnPageSender({ id: ID, url: `chrome-extension://${ID}x/note.html` }, ID)).toBe(false);
+    expect(isOwnPageSender({ id: ID }, ID)).toBe(false);
+  });
+  it("isSenderPage pins one exact page outside any tab", () => {
+    expect(isSenderPage({ id: ID, url: `${base}offscreen.html` }, ID, `${base}offscreen.html`)).toBe(true);
+    expect(isSenderPage({ id: ID, url: `${base}sidepanel.html` }, ID, `${base}offscreen.html`)).toBe(false);
+    expect(isSenderPage({ id: ID, url: `${base}offscreen.html`, tab: { id: 1 } }, ID, `${base}offscreen.html`)).toBe(false);
   });
 });

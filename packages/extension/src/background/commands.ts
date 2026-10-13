@@ -1,22 +1,41 @@
 /**
  * Keyboard shortcuts (the "commands" key in manifest.json).
  *
- * Users can rebind or add shortcuts at chrome://extensions/shortcuts. Chrome
- * only honours 4 `suggested_key` defaults per extension, so toggle-recording,
- * toggle-voice and quick-note ship unbound.
+ * Defaults: Alt+S visible area, Alt+X select area, Alt+A voice note,
+ * Alt+D tab recording. Chrome allows at most 4 `suggested_key` entries per
+ * extension (a fifth is a manifest load error; scripts/check-manifest.mjs
+ * enforces it), so screenshot-full (we suggest Alt+W), quick-note (Alt+T)
+ * and open-panel ship unbound; the panel shows a hint and the real bindings
+ * (chrome.commands.getAll()), since users can rebind everything at
+ * chrome://extensions/shortcuts.
  *
- * A keyboard shortcut is a user gesture: it grants `activeTab` for the
- * current tab, and allows `chrome.sidePanel.open()`. The gesture only counts
- * during the synchronous part of the listener, so `chrome.sidePanel.open`
- * must be called BEFORE the first `await`; after an await Chrome rejects it
- * with "sidePanel.open() may only be called in response to a user gesture".
+ * Every command works with the side panel closed ("headless"):
+ *   screenshots      captured and uploaded by the worker;
+ *   toggle-voice,
+ *   toggle-recording run in the offscreen document (recording.ts);
+ *   quick-note       opens the note popup (note-popup.ts);
+ *   open-panel       opens the panel.
+ * Results and errors go to the panel if it is open, else to the badge.
+ *
+ * A keyboard shortcut is a user gesture and grants `activeTab` for the
+ * current tab. APIs differ in what they need from it:
+ *  - chrome.sidePanel.open() must be called during the synchronous part of
+ *    the listener; after an await Chrome rejects it with "may only be called
+ *    in response to a user gesture". So it is called before anything else.
+ *  - chrome.action.openPopup(): called synchronously too (note-popup.ts), so
+ *    the question of whether it needs the gesture never arises.
+ *  - chrome.tabCapture.getMediaStreamId() and captureVisibleTab() need the
+ *    activeTab grant, which outlives the gesture (until the tab navigates),
+ *    so they may run after awaits (verified, see recording.ts).
  * That is why `handleCommand` is a plain (non-async) function.
  */
 
 import type { ScreenshotMode } from "@nitpick/protocol";
-import { postToPanelInbox, type PanelCommand } from "../shared/state.js";
+import { pageContextFromTab } from "../shared/page-context.js";
 import { takeScreenshot } from "./actions.js";
+import { openNotePopup } from "./note-popup.js";
 import { notifyToast } from "./notify.js";
+import { toggleTabRecording, toggleVoice } from "./recording.js";
 
 const SCREENSHOT_COMMANDS: Readonly<Record<string, ScreenshotMode>> = {
   "screenshot-viewport": "viewport",
@@ -24,21 +43,21 @@ const SCREENSHOT_COMMANDS: Readonly<Record<string, ScreenshotMode>> = {
   "screenshot-area": "area",
 };
 
-const PANEL_COMMANDS: ReadonlySet<string> = new Set<PanelCommand>([
-  "open-panel",
-  "toggle-recording",
-  "toggle-voice",
-  "quick-note",
-]);
-
 export function handleCommand(command: string, tab: chrome.tabs.Tab | undefined): void {
-  if (PANEL_COMMANDS.has(command)) {
-    // Synchronously, while the gesture is still active.
-    if (tab) openSidePanel(tab.windowId);
-    // The recorders live in the panel (they need a document). The panel may
-    // still be loading, so hand it the command via storage, not a message.
-    void postToPanelInbox(command as PanelCommand, tab?.windowId);
-    return;
+  switch (command) {
+    case "open-panel":
+      // Synchronously, while the gesture is still active.
+      if (tab) openSidePanel(tab.windowId);
+      return;
+    case "quick-note":
+      openNotePopup(tab); // synchronous part first, see note-popup.ts
+      return;
+    case "toggle-voice":
+      void toggleVoice(pageContextFromTab(tab));
+      return;
+    case "toggle-recording":
+      void toggleTabRecording(tab);
+      return;
   }
 
   const mode = SCREENSHOT_COMMANDS[command];

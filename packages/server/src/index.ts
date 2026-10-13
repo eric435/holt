@@ -43,6 +43,7 @@ export type {
   VoiceNoteEntry,
   NoteEntry,
   SessionInfo,
+  ProjectInfo,
   StatusResponse,
   SessionResponse,
   MediaUploadResponse,

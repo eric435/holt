@@ -1,17 +1,25 @@
 /**
  * Typed message bus between the extension's execution contexts.
  *
- * nitpick runs code in three places that cannot share memory:
+ * nitpick runs code in five places that cannot share memory:
  *
- *   service worker (background)  <-- chrome.runtime.sendMessage --  side panel
+ *   service worker (background)  <-- chrome.runtime.sendMessage --  side panel, note popup
  *   service worker (background)  <-- chrome.runtime.sendMessage --  content scripts
  *   service worker (background)  -- chrome.tabs.sendMessage -->     content scripts
  *   service worker (background)  -- chrome.runtime.sendMessage -->  side panel (broadcast)
+ *   service worker (background)  <-- chrome.runtime.sendMessage --> offscreen document (recorders)
+ *   offscreen document           -- chrome.runtime.sendMessage -->  side panel (live transcript)
  *
  * Messages are JSON-serialised when they cross a context boundary, so only
- * plain data goes through here (no Blobs, no class instances, no functions).
- * That is also why the side panel uploads its own recordings instead of
- * handing them to the worker.
+ * plain data goes through here (no Blobs, no MediaStreams, no class
+ * instances, no functions). That is also why whoever records something
+ * uploads it: the offscreen document uploads tab recordings and voice notes,
+ * the side panel uploads window/screen recordings, and the worker uploads
+ * the screenshots it took.
+ *
+ * Message names: `offscreen:*` are requests the worker sends to the
+ * offscreen document; `recorder:*` are what the offscreen document reports
+ * (plus `recorder:toggle`, the panel asking the worker to start/stop one).
  *
  * ---------------------------------------------------------------------------
  * The async-response gotcha
@@ -31,7 +39,7 @@
  * calling `sendResponse`, so the context that does handle it can answer.
  */
 
-import type { Entry, ScreenshotMode, SessionInfo } from "@nitpick/protocol";
+import type { Entry, PageContext, ScreenshotMode, SessionInfo } from "@nitpick/protocol";
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -75,11 +83,135 @@ export interface EntryAddedMessage {
 
 export type ToastLevel = "info" | "success" | "error";
 
+/**
+ * A button the panel can show on a toast. An id, not a function or URL, so a
+ * message can only ever trigger one of these fixed, harmless actions.
+ */
+export type ToastAction = "open-permissions" | "open-shortcuts";
+
 /** Worker -> side panel: something to tell the user (broadcast). */
 export interface ToastMessage {
   type: "toast";
   level: ToastLevel;
   message: string;
+  action?: ToastAction;
+}
+
+/**
+ * Note popup / offscreen document -> worker: "I saved this entry". The
+ * worker adds it to the recent list and tells the panel (or flashes the
+ * badge), exactly as for its own screenshots.
+ */
+export interface EntryCreatedMessage {
+  type: "entry-created";
+  entry: Entry;
+  session: SessionInfo;
+}
+
+// ---- recorders (offscreen document) ---------------------------------------
+
+export type RecorderKind = "tab" | "voice";
+
+/**
+ * Everything the offscreen document needs from settings. It has no
+ * chrome.storage (offscreen documents only get chrome.runtime), so the worker
+ * reads settings and sends them along with every start request.
+ */
+export interface RecorderSettings {
+  serverUrl: string;
+  token: string;
+  keepAudio: boolean;
+  microphoneId: string;
+  microphoneLabel: string;
+}
+
+/** Side panel -> worker: start or stop a recorder (same as the shortcut). */
+export interface RecorderToggleRequest {
+  type: "recorder:toggle";
+  recorder: RecorderKind;
+  /** The panel's window; the worker records that window's active tab. */
+  windowId: number;
+}
+
+export type RecorderToggleResponse = { ok: true; running: boolean } | { ok: false; error: string };
+
+/** Worker -> offscreen: record the tab behind `streamId` (from chrome.tabCapture.getMediaStreamId). */
+export interface OffscreenStartTabRequest {
+  type: "offscreen:start-tab";
+  id: string;
+  streamId: string;
+  page: PageContext;
+  settings: RecorderSettings;
+}
+
+/** Worker -> offscreen: start a voice note. */
+export interface OffscreenStartVoiceRequest {
+  type: "offscreen:start-voice";
+  id: string;
+  page: PageContext;
+  settings: RecorderSettings;
+}
+
+export type OffscreenStartResponse =
+  | {
+      ok: true;
+      /** Label of the microphone actually used (voice), if the browser reveals it. */
+      microphoneLabel?: string;
+      /** The chosen microphone was missing; the default one is used instead. */
+      microphoneFallback?: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+      /** DOMException name (NotAllowedError, NotFoundError, ...) so the worker can offer the right fix. */
+      errorName?: string;
+    };
+
+/** Worker -> offscreen: stop a recorder; it then uploads and reports `entry-created`. */
+export interface OffscreenStopRequest {
+  type: "offscreen:stop";
+  recorder: RecorderKind;
+}
+
+/** Worker -> offscreen: what are you doing? (used before closing the document). */
+export interface OffscreenStatusRequest {
+  type: "offscreen:status";
+}
+
+export interface OffscreenStatusResponse {
+  ok: true;
+  /** Id of the running recording per recorder, or null. */
+  tab: string | null;
+  voice: string | null;
+  /** Recordings stopped but still uploading. */
+  uploading: number;
+}
+
+/** Offscreen -> worker: a recorder stopped (by request, or because its stream ended). */
+export interface RecorderStoppedMessage {
+  type: "recorder:stopped";
+  recorder: RecorderKind;
+  id: string;
+}
+
+/** Offscreen -> worker: show this to the user (the worker owns toasts and the badge fallback). */
+export interface RecorderToastMessage {
+  type: "recorder:toast";
+  level: ToastLevel;
+  message: string;
+  action?: ToastAction;
+}
+
+/** Offscreen -> worker: no recording and no upload left; the document may be closed. */
+export interface RecorderIdleMessage {
+  type: "recorder:idle";
+}
+
+/** Offscreen -> side panel: live transcript of the running voice note (broadcast, best effort). */
+export interface RecorderTranscriptMessage {
+  type: "recorder:transcript";
+  final: string;
+  interim: string;
 }
 
 /** Worker -> page-helper content script. */
@@ -129,6 +261,16 @@ export type Message =
   | AreaCancelledMessage
   | EntryAddedMessage
   | ToastMessage
+  | EntryCreatedMessage
+  | RecorderToggleRequest
+  | OffscreenStartTabRequest
+  | OffscreenStartVoiceRequest
+  | OffscreenStopRequest
+  | OffscreenStatusRequest
+  | RecorderStoppedMessage
+  | RecorderToastMessage
+  | RecorderIdleMessage
+  | RecorderTranscriptMessage
   | HelperMetricsRequest
   | HelperScrollRequest
   | HelperRestoreRequest;
@@ -142,6 +284,16 @@ export interface ResponseMap {
   "area-cancelled": Ack;
   "entry-added": Ack;
   toast: Ack;
+  "entry-created": Ack;
+  "recorder:toggle": RecorderToggleResponse;
+  "offscreen:start-tab": OffscreenStartResponse;
+  "offscreen:start-voice": OffscreenStartResponse;
+  "offscreen:stop": { ok: true; wasRunning: boolean };
+  "offscreen:status": OffscreenStatusResponse;
+  "recorder:stopped": Ack;
+  "recorder:toast": Ack;
+  "recorder:idle": Ack;
+  "recorder:transcript": Ack;
   "helper:metrics": PageMetrics;
   "helper:scroll-to": HelperScrollResponse;
   "helper:restore": Ack;
@@ -176,6 +328,16 @@ const MESSAGE_TYPES: ReadonlySet<string> = new Set<MessageType>([
   "area-cancelled",
   "entry-added",
   "toast",
+  "entry-created",
+  "recorder:toggle",
+  "offscreen:start-tab",
+  "offscreen:start-voice",
+  "offscreen:stop",
+  "offscreen:status",
+  "recorder:stopped",
+  "recorder:toast",
+  "recorder:idle",
+  "recorder:transcript",
   "helper:metrics",
   "helper:scroll-to",
   "helper:restore",
@@ -241,13 +403,89 @@ export function isEntryAddedMessage(value: unknown): value is EntryAddedMessage 
   return isRecord(value) && value.type === "entry-added" && isRecord(value.entry) && isRecord(value.session);
 }
 
+const TOAST_ACTIONS: ReadonlySet<string> = new Set<ToastAction>(["open-permissions", "open-shortcuts"]);
+const RECORDERS: ReadonlySet<string> = new Set<RecorderKind>(["tab", "voice"]);
+
+function isToastLevel(value: unknown): value is ToastLevel {
+  return value === "info" || value === "success" || value === "error";
+}
+
+/** Shared by `toast` and `recorder:toast`: a level, a message, and optionally a known action. */
+function isToastShape(value: Record<string, unknown>): boolean {
+  return isToastLevel(value.level) && typeof value.message === "string" && (value.action === undefined || (typeof value.action === "string" && TOAST_ACTIONS.has(value.action)));
+}
+
 export function isToastMessage(value: unknown): value is ToastMessage {
+  return isRecord(value) && value.type === "toast" && isToastShape(value);
+}
+
+export function isRecorderToastMessage(value: unknown): value is RecorderToastMessage {
+  return isRecord(value) && value.type === "recorder:toast" && isToastShape(value);
+}
+
+export function isEntryCreatedMessage(value: unknown): value is EntryCreatedMessage {
   return (
     isRecord(value) &&
-    value.type === "toast" &&
-    typeof value.message === "string" &&
-    (value.level === "info" || value.level === "success" || value.level === "error")
+    value.type === "entry-created" &&
+    isRecord(value.entry) &&
+    typeof value.entry.id === "string" &&
+    Number.isInteger(value.entry.seq) &&
+    isRecord(value.session) &&
+    typeof value.session.id === "string"
   );
+}
+
+export function isRecorderToggleRequest(value: unknown): value is RecorderToggleRequest {
+  return (
+    isRecord(value) &&
+    value.type === "recorder:toggle" &&
+    typeof value.recorder === "string" &&
+    RECORDERS.has(value.recorder) &&
+    Number.isInteger(value.windowId)
+  );
+}
+
+export function isRecorderStoppedMessage(value: unknown): value is RecorderStoppedMessage {
+  return isRecord(value) && value.type === "recorder:stopped" && typeof value.recorder === "string" && RECORDERS.has(value.recorder) && typeof value.id === "string";
+}
+
+export function isRecorderTranscriptMessage(value: unknown): value is RecorderTranscriptMessage {
+  return isRecord(value) && value.type === "recorder:transcript" && typeof value.final === "string" && typeof value.interim === "string";
+}
+
+function isPageContext(value: unknown): value is PageContext {
+  return isRecord(value) && typeof value.url === "string" && typeof value.title === "string";
+}
+
+function isRecorderSettings(value: unknown): value is RecorderSettings {
+  return (
+    isRecord(value) &&
+    typeof value.serverUrl === "string" &&
+    typeof value.token === "string" &&
+    typeof value.keepAudio === "boolean" &&
+    typeof value.microphoneId === "string" &&
+    typeof value.microphoneLabel === "string"
+  );
+}
+
+export function isOffscreenStartTabRequest(value: unknown): value is OffscreenStartTabRequest {
+  return (
+    isRecord(value) &&
+    value.type === "offscreen:start-tab" &&
+    typeof value.id === "string" &&
+    typeof value.streamId === "string" &&
+    value.streamId !== "" &&
+    isPageContext(value.page) &&
+    isRecorderSettings(value.settings)
+  );
+}
+
+export function isOffscreenStartVoiceRequest(value: unknown): value is OffscreenStartVoiceRequest {
+  return isRecord(value) && value.type === "offscreen:start-voice" && typeof value.id === "string" && isPageContext(value.page) && isRecorderSettings(value.settings);
+}
+
+export function isOffscreenStopRequest(value: unknown): value is OffscreenStopRequest {
+  return isRecord(value) && value.type === "offscreen:stop" && typeof value.recorder === "string" && RECORDERS.has(value.recorder);
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +506,7 @@ export interface SenderLike {
   id?: string | undefined;
   tab?: { id?: number | undefined } | undefined;
   frameId?: number | undefined;
+  url?: string | undefined;
 }
 
 /**
@@ -278,6 +517,24 @@ export interface SenderLike {
  */
 export function isTrustedExtensionSender(sender: SenderLike, runtimeId: string): boolean {
   return Boolean(runtimeId) && sender.id === runtimeId && !sender.tab;
+}
+
+/**
+ * Sent by one of our own extension pages, wherever it is shown: the side
+ * panel, the offscreen document, the note popup, or the note page opened in
+ * its own popup window (which, unlike the action popup, IS a tab, so
+ * `isTrustedExtensionSender` would refuse it). A content script's
+ * `sender.url` is the URL of the web page it runs in, and no web page can
+ * have our chrome-extension:// URL because we expose no
+ * web_accessible_resources.
+ */
+export function isOwnPageSender(sender: SenderLike, runtimeId: string): boolean {
+  return Boolean(runtimeId) && sender.id === runtimeId && (sender.url ?? "").startsWith(`chrome-extension://${runtimeId}/`);
+}
+
+/** Sent by the page at exactly `pageUrl` (e.g. our offscreen document), not from a tab. */
+export function isSenderPage(sender: SenderLike, runtimeId: string, pageUrl: string): boolean {
+  return isTrustedExtensionSender(sender, runtimeId) && sender.url === pageUrl;
 }
 
 /** Sent from the top frame (frameId 0) of tab `tabId`. */

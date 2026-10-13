@@ -5,10 +5,16 @@
  */
 import { EventEmitter } from "node:events";
 import http from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { BASE_PATH, CLIENT_HEADER, CLIENT_HEADER_VALUE, type SessionResponse } from "@nitpick/protocol";
+import {
+  BASE_PATH,
+  CLIENT_HEADER,
+  CLIENT_HEADER_VALUE,
+  type SessionResponse,
+  type StatusResponse,
+} from "@nitpick/protocol";
 import type { Connect, Plugin, ViteDevServer } from "vite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import nitpick from "./vite.js";
@@ -99,7 +105,8 @@ describe("nitpick() Vite plugin", () => {
     expect(await readFile(path.join(session?.dir ?? "", "notes.md"), "utf8")).toMatch(/^# Vite QA /);
   });
 
-  it("logs the API URL once the dev server is listening", async () => {
+  it("logs the project and API URL once the dev server is listening", async () => {
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "vite-app" }));
     const httpServer = Object.assign(new EventEmitter(), {
       address: () => ({ address: "127.0.0.1", family: "IPv4", port: 5173 }),
     });
@@ -107,8 +114,18 @@ describe("nitpick() Vite plugin", () => {
     await configure(nitpick(), server);
     httpServer.emit("listening");
     const messages = logger.info.mock.calls.map((call) => String(call[0]));
-    expect(messages.some((m) => m.includes(`http://127.0.0.1:5173${BASE_PATH}`))).toBe(true);
+    expect(
+      messages.some((m) => m.includes(`serving vite-app (from package.json) at http://127.0.0.1:5173${BASE_PATH}`)),
+    ).toBe(true);
     expect(messages.every((m) => m.startsWith("[nitpick]"))).toBe(true);
+  });
+
+  it("reports projectName from plugin options in /status", async () => {
+    const { server, use } = stubServer();
+    await configure(nitpick({ projectName: "storefront" }), server);
+    const origin = await serveMiddlewares(use);
+    const res = await fetch(`${origin}${BASE_PATH}/status`, { headers: EXT_HEADERS });
+    expect(((await res.json()) as StatusResponse).project).toEqual({ name: "storefront", source: "config" });
   });
 
   it("ends the active session when the dev server closes", async () => {

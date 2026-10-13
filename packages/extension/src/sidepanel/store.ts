@@ -9,6 +9,8 @@
 
 import type { SessionInfo, StatusResponse } from "@nitpick/protocol";
 import { DEFAULT_SETTINGS, type Settings } from "../shared/settings.js";
+import type { ShortcutMap } from "../shared/shortcuts.js";
+import type { RecordingState } from "../shared/state.js";
 
 export type ServerState =
   | { kind: "checking" }
@@ -22,6 +24,10 @@ export interface PanelState {
   server: ServerState;
   /** Latest known session (from /status or from any upload response). */
   session: SessionInfo | null;
+  /** What is recording (mirrored from storage.session; the offscreen recorders and this panel write it). */
+  recording: RecordingState;
+  /** Current keyboard shortcuts (chrome.commands.getAll()). */
+  shortcuts: ShortcutMap;
 }
 
 type Listener = (state: PanelState, previous: PanelState) => void;
@@ -31,6 +37,8 @@ let state: PanelState = {
   settings: { ...DEFAULT_SETTINGS },
   server: { kind: "checking" },
   session: null,
+  recording: {},
+  shortcuts: {},
 };
 const listeners = new Set<Listener>();
 

@@ -1,9 +1,12 @@
 <!doctype html>
 <!--
-  Opened in a normal tab when the side panel can't get microphone access.
-  Chrome may not display permission prompts inside a side panel, but it does
-  in a tab. The permission belongs to the extension's origin, so granting it
-  here also unlocks the side panel.
+  Opened in a normal tab when nitpick can't get microphone access: by the
+  worker when a voice note fails to start with the panel closed, from the
+  panel's "Grant microphone access" toast, or from Settings ("Grant access to
+  see names"). Voice notes are recorded in an offscreen document, which is
+  never visible and so can never show a permission prompt; a tab can. The
+  permission belongs to the extension's origin (chrome-extension://<id>), so
+  granting it here also unlocks the offscreen recorder and the side panel.
 -->
 <html lang="en">
   <head>
@@ -17,7 +20,7 @@
     <main style="max-width: 520px; margin: 40px auto">
       <section class="card">
         <h2>Microphone access</h2>
-        <p>nitpick records voice notes from the side panel. Chrome needs your permission to use the microphone for this extension.</p>
+        <p>nitpick records voice notes in the background, so they keep going with the side panel closed. Because that recorder is invisible, Chrome can't ask you there; allow the microphone for nitpick once on this page instead.</p>
         <button id="grant" class="big">Allow microphone</button>
         <p id="result" class="hint" role="status"></p>
       </section>

@@ -2,8 +2,10 @@
  * Panel-side uploads: post an entry (optionally after uploading media),
  * then update the session display and the recent-entries list.
  *
- * The panel talks to the server directly (not via the worker) because
- * recordings are Blobs created here, see shared/api.ts.
+ * Used for what the panel itself creates: typed notes (also the "add a
+ * note" field on screenshots) and window/screen recordings, which are
+ * Blobs created here (see shared/api.ts). Tab recordings and voice notes
+ * are uploaded by the offscreen document instead.
  */
 
 import type { Entry, EntryInput, EntryKind } from "@nitpick/protocol";

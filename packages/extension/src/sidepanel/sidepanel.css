@@ -63,7 +63,7 @@ label.check { display: flex; align-items: center; gap: 6px; }
 .row.end { justify-content: flex-end; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
-.stack { display: grid; gap: 2px; justify-items: center; }
+.stack { display: grid; gap: 2px; justify-items: center; align-content: start; }
 .busy { opacity: 0.7; }
 
 .timer { font-variant-numeric: tabular-nums; color: var(--danger); min-height: 1.2em; }
@@ -106,3 +106,29 @@ details summary { cursor: pointer; font-weight: 600; }
 .toast-info { border-left-color: var(--accent); }
 .toast-error { border-left-color: var(--danger); }
 .toast-close { background: none; border: none; color: var(--muted); padding: 0 2px; font-size: 16px; line-height: 1; }
+
+/* Server line: project first, prominent; tool/version/host muted. */
+.server-line .project { font-size: 14px; }
+
+/* Capture card extras */
+.mic-hint { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.display-row { display: grid; gap: 0; justify-items: start; }
+.display-row .link { padding: 0; }
+.shortcut-hint { display: flex; gap: 6px; align-items: flex-start; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.shortcut-hint span { flex: 1; }
+.ok-text { color: var(--ok); }
+
+/* Settings: microphone + shortcut list */
+select { font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+.mic-picker { margin-top: 12px; }
+.card h3 { font-size: 12px; margin: 14px 0 6px; }
+dl.shortcuts { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 0; }
+dl.shortcuts dd { margin: 0; }
+kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; background: var(--bg); }
+
+/* note.html: the Alt+T popup (action popups size to their content, max 800x600). */
+body.note-popup { width: 380px; padding: 10px; }
+body.note-popup.in-window { width: auto; }
+.note-popup form { display: grid; gap: 6px; }
+.note-popup .note-page { margin: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-footer { display: flex; gap: 8px; align-items: center; justify-content: space-between; }

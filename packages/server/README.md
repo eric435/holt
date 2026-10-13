@@ -36,7 +36,7 @@ npx nitpick-notes
 full package name: `nitpick` on its own is a different npm package.)
 
 ```
-[nitpick] v0.1.0 listening on http://127.0.0.1:4848/__nitpick
+[nitpick] v0.1.0 serving my-app (from package.json) at http://127.0.0.1:4848/__nitpick
 [nitpick] Writing sessions to /path/to/app/qa
 [nitpick] Connect: open the nitpick extension's side panel and set the server URL to http://127.0.0.1:4848
 ```
@@ -44,7 +44,8 @@ full package name: `nitpick` on its own is a different npm package.)
 Options:
 
 ```
-nitpick [--port <n>] [--host <host>] [--out <dir>] [--config <file>] [--token <secret>]
+nitpick [--port <n>] [--host <host>] [--out <dir>] [--project-name <name>]
+        [--config <file>] [--token <secret>]
 nitpick init [--force]    write a starter nitpick.config.json
 nitpick --help | --version
 ```
@@ -118,6 +119,7 @@ autocomplete.
 | `token` | string \| null | `null` | Shared secret the extension must send (`x-nitpick-token`). Required for requests from other machines. |
 | `maxUploadBytes` | integer | `209715200` (200 MiB) | Size limit for one screenshot or recording. |
 | `sessionTitle` | string | `"QA session"` | H1 title for new sessions. |
+| `projectName` | string | `name` from `./package.json`, else the directory name | Name the extension shows for this server ("my-app at http://127.0.0.1:4848"), so you can tell several apart. At most 100 characters, no control characters. Parent directories are not searched. |
 | `allowedOrigins` | string[] | `[]` | Extra exact web origins allowed to call the API. |
 | `allowedExtensionIds` | string[] | `[]` | Extension IDs allowed to call the API. Empty allows any `chrome-extension://` origin. |
 

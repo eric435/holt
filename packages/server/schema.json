@@ -50,6 +50,13 @@
       "default": "QA session",
       "description": "Default title (the H1 of notes.md) for new sessions."
     },
+    "projectName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]+$",
+      "description": "Name the extension shows for this project, so you can tell several running servers apart. Default: the \"name\" field of package.json in the project root, else the root directory's name. At most 100 characters, no control characters."
+    },
     "allowedOrigins": {
       "type": "array",
       "default": [],

@@ -28,6 +28,9 @@ Options:
   --port <n>       port to listen on (default ${DEFAULT_PORT})
   --host <host>    interface to bind (default 127.0.0.1; keep it on loopback)
   --out <dir>      where session folders are written (default "qa")
+  --project-name <name>
+                   name the extension shows for this project (default: the
+                   "name" in ./package.json, else the directory name)
   --config <file>  config file to use (default ./nitpick.config.json if present)
   --token <secret> require this token from the extension. Prefer the config
                    file: command-line arguments are visible to other local
@@ -49,6 +52,7 @@ export function parseCliArgs(argv: string[]): CliCommand {
         port: { type: "string" },
         host: { type: "string" },
         out: { type: "string" },
+        "project-name": { type: "string" },
         config: { type: "string" },
         token: { type: "string" },
         force: { type: "boolean" },
@@ -76,6 +80,8 @@ export function parseCliArgs(argv: string[]): CliCommand {
   if (values.port !== undefined) overrides.port = parsePort(values.port);
   if (values.host !== undefined) overrides.host = values.host;
   if (values.out !== undefined) overrides.outputDir = values.out;
+  // Length and character rules are the config validator's, as for --port.
+  if (values["project-name"] !== undefined) overrides.projectName = values["project-name"];
   if (values.token !== undefined) overrides.token = values.token;
 
   return {

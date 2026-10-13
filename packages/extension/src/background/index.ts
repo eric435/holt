@@ -18,14 +18,28 @@ import {
   isAreaCancelledMessage,
   isAreaSelectedMessage,
   isCaptureRequest,
+  isEntryCreatedMessage,
+  isOwnPageSender,
+  isRecorderStoppedMessage,
+  isRecorderToastMessage,
+  isRecorderToggleRequest,
+  isSenderPage,
   isTrustedExtensionSender,
   onMessage,
   type CaptureResponse,
   type Message,
+  type RecorderToggleRequest,
+  type RecorderToggleResponse,
 } from "../shared/messages.js";
+import { pageContextFromTab } from "../shared/page-context.js";
 import { migrateFromSync, restrictStorageAccess } from "../shared/settings.js";
+import { onRecordingStateChanged, onStateChanged } from "../shared/state.js";
 import { cancelAreaSelection, finishAreaSelection, takeScreenshot } from "./actions.js";
 import { handleCommand, openSidePanel } from "./commands.js";
+import { refreshIndicator } from "./indicator.js";
+import { notifyEntryAdded, notifyToast } from "./notify.js";
+import { OFFSCREEN_URL, closeOffscreenIfIdle } from "./offscreen.js";
+import { onRecorderStopped, reconcileRecordingState, toggleTabRecording, toggleVoice } from "./recording.js";
 
 // Before anything else touches settings: make storage.local/sync readable
 // only by the worker and extension pages (not content scripts), and move
@@ -59,11 +73,48 @@ onMessage((message: Message, sender) => {
       if (isAreaCancelledMessage(message)) void cancelAreaSelection(sender);
       return { ok: true };
 
+    case "recorder:toggle":
+      // The panel's Record tab / Voice note buttons: same path as the shortcuts.
+      if (!isTrustedExtensionSender(sender, chrome.runtime.id)) return { ok: false, error: "Recorder requests must come from the side panel." };
+      if (!isRecorderToggleRequest(message)) return { ok: false, error: "Malformed recorder request." };
+      return handleRecorderToggle(message);
+
+    case "entry-created":
+      // The note popup (possibly in its own window, i.e. a tab) or the
+      // offscreen document saved an entry: list it and tell the user.
+      if (!isOwnPageSender(sender, chrome.runtime.id) || !isEntryCreatedMessage(message)) return undefined;
+      return notifyEntryAdded(message.entry, message.session).then(() => ({ ok: true }));
+
+    // ---- reports from the offscreen document --------------------------------
+    case "recorder:stopped":
+      if (!fromOffscreen(sender) || !isRecorderStoppedMessage(message)) return undefined;
+      return onRecorderStopped(message.recorder, message.id).then(() => ({ ok: true }));
+    case "recorder:toast":
+      // Every recorder error ends up here, so it reaches the panel or the badge.
+      if (!fromOffscreen(sender) || !isRecorderToastMessage(message)) return undefined;
+      return notifyToast(message.level, message.message, message.action).then(() => ({ ok: true }));
+    case "recorder:idle":
+      if (!fromOffscreen(sender)) return undefined;
+      void closeOffscreenIfIdle();
+      return { ok: true };
+
     default:
-      // entry-added / toast are for the panel; helper:* are for content scripts.
+      // entry-added / toast / recorder:transcript are for the panel;
+      // offscreen:* for the offscreen document; helper:* for content scripts.
       return undefined;
   }
 });
+
+/** The recorder reports are only believed from our offscreen document. */
+function fromOffscreen(sender: chrome.runtime.MessageSender): boolean {
+  return isSenderPage(sender, chrome.runtime.id, OFFSCREEN_URL);
+}
+
+// The toolbar indicator follows the recording state and the project name,
+// whichever context changed them (worker, panel, or a previous worker
+// instance). storage.onChanged also wakes the worker, so it can't be missed.
+onRecordingStateChanged(() => void refreshIndicator());
+onStateChanged("serverInfo", () => void refreshIndicator());
 
 // Clicking the toolbar icon opens the side panel.
 //
@@ -83,6 +134,19 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((erro
 });
 chrome.action.onClicked.addListener((tab) => openSidePanel(tab.windowId));
 
+// On every worker start: forget recordings nothing backs any more, and make
+// the icon match the state (the action's badge/icon survive worker restarts,
+// but not an extension reload).
+void reconcileRecordingState().then(refreshIndicator);
+
+/**
+ * Test seam: lets scripts/e2e.mjs run a keyboard command, since a real
+ * shortcut can't be pressed through the DevTools protocol. Only code running
+ * inside this worker (DevTools / CDP) can reach it: web pages, content
+ * scripts and other extensions can't see the worker's global scope.
+ */
+(globalThis as { nitpickTest?: unknown }).nitpickTest = { handleCommand };
+
 // ---------------------------------------------------------------------------
 
 async function handleCaptureRequest(windowId: number, mode: CaptureRequestMode): Promise<CaptureResponse> {
@@ -95,3 +159,8 @@ async function handleCaptureRequest(windowId: number, mode: CaptureRequestMode):
 }
 
 type CaptureRequestMode = Parameters<typeof takeScreenshot>[0];
+
+async function handleRecorderToggle(request: RecorderToggleRequest): Promise<RecorderToggleResponse> {
+  const [tab] = await chrome.tabs.query({ active: true, windowId: request.windowId });
+  return request.recorder === "tab" ? toggleTabRecording(tab) : toggleVoice(pageContextFromTab(tab));
+}

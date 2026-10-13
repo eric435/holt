@@ -34,10 +34,27 @@ export interface SessionInfo {
   entryCount: number;
 }
 
+/**
+ * Which project this server writes into, so the extension can say
+ * "acme-web" rather than just "nitpick 0.1.0" when several are running.
+ */
+export interface ProjectInfo {
+  /** Display name, at most 100 characters. */
+  name: string;
+  /**
+   * Where the name came from: the `projectName` config option, the `name`
+   * field of <root>/package.json, or the root directory's base name.
+   */
+  source: "config" | "package.json" | "directory";
+}
+
 export interface StatusResponse {
   ok: true;
+  /** The tool, always "nitpick". See `project` for what it is serving. */
   name: "nitpick";
+  /** The nitpick server package version. */
   version: string;
+  project: ProjectInfo;
   session: SessionInfo | null;
   /** Non-secret config the extension may want to show. */
   config: {

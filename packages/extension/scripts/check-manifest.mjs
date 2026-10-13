@@ -6,7 +6,11 @@
  *  - the on-demand content scripts (injected via executeScript, so NOT in
  *    the manifest) were emitted, and are classic scripts (no import/export);
  *  - permissions are exactly the minimal set we intend to ship;
- *  - at most 4 commands have suggested keys (Chrome ignores the rest).
+ *  - at most 4 commands have suggested keys (Chrome 155 refuses to load an
+ *    extension with more: "Too many shortcuts specified for 'commands': The
+ *    maximum is 4."), no two share a key, and every command the code
+ *    handles exists;
+ *  - esbuild's target matches minimum_chrome_version.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -40,7 +44,7 @@ check(manifest.background?.type === "module", "background.type must be 'module' 
 check(/^\d+(\.\d+){0,3}$/.test(manifest.version), `invalid version: ${manifest.version}`);
 
 // 2. Files referenced from HTML pages (script src / link href / img src).
-for (const page of ["sidepanel.html", "permissions.html"]) {
+for (const page of ["sidepanel.html", "permissions.html", "offscreen.html", "note.html"]) {
   check(exists(page), `missing ${page}`);
   if (!exists(page)) continue;
   const html = readFileSync(join(dist, page), "utf8").replace(/<!--[\s\S]*?-->/g, ""); // ignore comments
@@ -59,7 +63,8 @@ for (const file of ["content/area-select.js", "content/page-helper.js"]) {
 }
 
 // 4. Permissions.
-const EXPECTED_PERMISSIONS = ["activeTab", "scripting", "sidePanel", "storage"];
+// offscreen: the recorders' hidden page; tabCapture: "Record tab" (see README).
+const EXPECTED_PERMISSIONS = ["activeTab", "offscreen", "scripting", "sidePanel", "storage", "tabCapture"];
 const EXPECTED_HOSTS = ["http://127.0.0.1/*", "http://localhost/*"];
 const same = (a = [], b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 check(same(manifest.permissions, EXPECTED_PERMISSIONS), `unexpected permissions: ${JSON.stringify(manifest.permissions)}`);
@@ -67,8 +72,19 @@ check(same(manifest.host_permissions, EXPECTED_HOSTS), `unexpected host_permissi
 check(!manifest.content_scripts, "content scripts are injected on demand; none should be declared");
 
 // 5. Commands.
-const withKeys = Object.values(manifest.commands ?? {}).filter((c) => c.suggested_key);
-check(withKeys.length <= 4, `Chrome allows at most 4 suggested keys, found ${withKeys.length}`);
+const commands = manifest.commands ?? {};
+const withKeys = Object.entries(commands).filter(([, c]) => c.suggested_key);
+check(withKeys.length <= 4, `Chrome allows at most 4 commands with suggested keys, found ${withKeys.length}: ${withKeys.map(([n]) => n).join(", ")}`);
+const keys = withKeys.flatMap(([, c]) => Object.values(c.suggested_key));
+check(new Set(withKeys.map(([, c]) => c.suggested_key.default)).size === withKeys.length, `two commands suggest the same key: ${keys.join(", ")}`);
+for (const name of ["open-panel", "screenshot-viewport", "screenshot-full", "screenshot-area", "toggle-recording", "toggle-voice", "quick-note"]) {
+  check(commands[name], `command missing from the manifest: ${name}`);
+}
+
+// 6. Build target vs minimum Chrome version (build.mjs: target "chromeNNN").
+const buildScript = readFileSync(join(dist, "..", "scripts", "build.mjs"), "utf8");
+const target = buildScript.match(/target:\s*"chrome(\d+)"/)?.[1];
+check(target === manifest.minimum_chrome_version, `esbuild target chrome${target} != minimum_chrome_version ${manifest.minimum_chrome_version}`);
 
 if (problems.length) {
   console.error("Manifest check FAILED:\n  - " + problems.join("\n  - "));

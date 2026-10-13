@@ -1,33 +1,28 @@
 /**
- * Screen recording with getDisplayMedia + MediaRecorder.
+ * Window/screen recording with getDisplayMedia + MediaRecorder: the panel's
+ * secondary "Record a window or screen…" option. (The primary "Record tab"
+ * uses chrome.tabCapture in the offscreen document, see offscreen/tab.ts,
+ * because that one survives the panel closing and needs no picker.)
  *
- * Lives in the side panel, not the worker: MediaRecorder and getDisplayMedia
- * need a document, and a service worker has none.
- *
- * User gesture: getDisplayMedia only works with "transient user activation",
- * i.e. within a few seconds of a real click/keypress in this document. A
- * keyboard shortcut is handled by the worker and does not count as activation
- * in the panel, so the toggle-recording shortcut can stop a recording but
- * starting one needs a click on the panel's button.
+ * Why this one stays in the side panel: getDisplayMedia shows Chrome's
+ * picker, and only does so with "transient user activation", i.e. within a
+ * few seconds of a real click/keypress in the calling document. An
+ * offscreen document never gets user activation (it is never shown), and a
+ * keyboard shortcut is handled by the worker, which has no document at all.
+ * (Chrome documents a DISPLAY_MEDIA offscreen reason, but the picker would
+ * still need activation in that document, which nothing can give it.)
  *
  * Lifetime: the recording lives in this page. Closing the side panel destroys
- * the page and the recording with it (nothing is uploaded). The user can also
- * stop via Chrome's own "Stop sharing" bar; we treat that as a normal stop.
+ * the page and the recording with it (nothing is uploaded); the panel says
+ * so next to the button. The user can also stop via Chrome's own "Stop
+ * sharing" bar; we treat that as a normal stop.
  *
  * Output: WebM (VP9 + Opus if available, else VP8, else browser default).
  * Note that MediaRecorder WebM files carry no duration header, so some
  * players show an unknown length / no seek bar until fully loaded.
  */
 
-import { pickMimeType, record, type RecordedMedia } from "./media.js";
-
-const VIDEO_TYPES = [
-  "video/webm;codecs=vp9,opus",
-  "video/webm;codecs=vp9",
-  "video/webm;codecs=vp8,opus",
-  "video/webm;codecs=vp8",
-  "video/webm",
-] as const;
+import { VIDEO_TYPES, pickMimeType, record, type RecordedMedia } from "../../shared/media-recorder.js";
 
 export interface ScreenRecording {
   /** Stop and get the result. Safe to call more than once. */
@@ -56,11 +51,4 @@ export async function startScreenRecording(onEnded: () => void): Promise<ScreenR
   });
 
   return { stop };
-}
-
-/** Is there transient user activation right now (a recent click)? */
-export function hasUserActivation(): boolean {
-  // navigator.userActivation is Chrome 72+; treat "unknown" as yes and let
-  // getDisplayMedia decide.
-  return navigator.userActivation?.isActive ?? true;
 }

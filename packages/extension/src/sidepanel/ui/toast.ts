@@ -13,12 +13,12 @@ export function mountToasts(root: HTMLElement): void {
   container = root;
 }
 
-export interface ToastAction {
+export interface ToastActionButton {
   label: string;
   run: () => void;
 }
 
-export function toast(level: ToastLevel, message: string, action?: ToastAction): void {
+export function toast(level: ToastLevel, message: string, action?: ToastActionButton): void {
   if (!container) return;
   const close = (): void => node.remove();
   const node = h(

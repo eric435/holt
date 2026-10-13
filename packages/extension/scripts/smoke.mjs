@@ -6,7 +6,10 @@
  *   1. Launch Chrome (headless first; headed if the worker never appears)
  *      and load the extension (see lib/chrome.mjs for how and why).
  *   2. Fail on any console.error / uncaught exception in the worker within ~3 s.
- *   3. Extra checks: commands registered, the side panel page renders without
+ *   3. Extra checks: commands registered with the intended default keys (4
+ *      bound, the rest unbound), no offscreen document at startup, a voice
+ *      note without microphone permission fails fast and offers
+ *      permissions.html in the panel, the side panel page renders without
  *      errors and migrates legacy storage.sync settings to storage.local, the on-demand content scripts work on a local fixture page
  *      (page-helper metrics/scroll/restore incl. hiding and restoring the
  *      fixed header; content scripts can't read storage and their forged
@@ -34,6 +37,7 @@ import {
   loadExtension,
   sleep,
   stopChrome,
+  waitFor,
 } from "./lib/chrome.mjs";
 
 const DIST = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "dist");
@@ -79,6 +83,16 @@ async function run(headless) {
     // ---- 2. worker state -----------------------------------------------------
     const commands = await evaluate(cdp, worker.sessionId, "chrome.commands.getAll().then(cs => cs.map(c => c.name))");
     for (const name of EXPECTED_COMMANDS) expect(commands.includes(name), `command not registered: ${name}`);
+    const bindings = await evaluate(cdp, worker.sessionId, "chrome.commands.getAll().then(cs => Object.fromEntries(cs.map(c => [c.name, c.shortcut])))");
+    for (const name of ["screenshot-viewport", "screenshot-area", "toggle-voice", "toggle-recording"]) {
+      expect(bindings[name], `${name} has no default shortcut (another extension may hold it): ${JSON.stringify(bindings)}`);
+    }
+    for (const name of ["screenshot-full", "quick-note", "open-panel"]) {
+      expect(!bindings[name], `${name} should ship unbound, has ${bindings[name]}`);
+    }
+    log(`shortcuts: ${Object.entries(bindings).map(([k, v]) => `${k}=${v || "-"}`).join(" ")}`);
+    const offscreenAtStart = (await cdp.send("Target.getTargets")).targetInfos.some((t) => t.url.endsWith("/offscreen.html"));
+    expect(!offscreenAtStart, "an offscreen document exists before anything was recorded");
     const behavior = await evaluate(cdp, worker.sessionId, "chrome.sidePanel.getPanelBehavior()");
     // We open the panel from action.onClicked instead (see background/index.ts).
     expect(behavior?.openPanelOnActionClick === false, "openPanelOnActionClick should be false");
@@ -104,6 +118,20 @@ async function run(headless) {
     expect(stores[1].serverUrl === "http://localhost:4999" && stores[1].keepAudio === false, `settings not migrated to storage.local: ${JSON.stringify(stores[1])}`);
     expect(serverLine.includes("localhost:4999"), "panel is not using the migrated server URL");
     log(`settings migration: sync -> local ${JSON.stringify(stores[1])}; sync now ${JSON.stringify(stores[0])}`);
+
+    // ---- 3b. voice note without microphone permission --------------------------
+    // This Chrome has no fake media flags, so the extension has no microphone
+    // grant. The offscreen recorder can't show a prompt; the start must fail
+    // fast and the panel must offer permissions.html.
+    await evaluate(cdp, worker.sessionId, `nitpickTest.handleCommand("toggle-voice", undefined)`);
+    const micToast = await waitFor(
+      () => evaluate(cdp, panel, `(() => { const t = document.getElementById('toasts'); return /Microphone access is blocked/.test(t.innerText) ? t.innerText : null; })()`),
+      { timeoutMs: 8_000, what: "the 'microphone blocked' toast" },
+    ).catch(() => null);
+    expect(micToast?.includes("Grant microphone access"), `no 'Grant microphone access' offer after a voice note without permission: ${micToast}`);
+    const voiceLeft = await evaluate(cdp, worker.sessionId, `chrome.storage.session.get("recordingVoice").then(s => s.recordingVoice ?? null)`);
+    expect(voiceLeft === null, "a failed voice note left recording state behind");
+    log(`voice note without permission: ${micToast ? "panel offered permissions.html" : "NO toast"}; state cleared=${voiceLeft === null}`);
 
     // ---- 4. content scripts on a fixture page ------------------------------
     const fixture = await startFixtureServer();
@@ -151,7 +179,14 @@ async function run(headless) {
                 .catch((e) => ({ error: e.message }));
               const toast = await chrome.runtime.sendMessage({ type: "toast", level: "error", message: "forged-by-content-script" })
                 .then((r) => ({ answered: r }), (e) => ({ error: e.message }));
-              return { storage, capture, toast };
+              // New in the offscreen-recorder design: none of these may be accepted from a page.
+              const answer = (m) => chrome.runtime.sendMessage(m).then((r) => r ?? null, (e) => ({ error: e.message }));
+              const toggle = await answer({ type: "recorder:toggle", recorder: "voice", windowId });
+              const created = await answer({ type: "entry-created", entry: { id: "x", seq: 1 }, session: { id: "s" } });
+              const stopped = await answer({ type: "recorder:stopped", recorder: "voice", id: "x" });
+              const startVoice = await answer({ type: "offscreen:start-voice", id: "x", page: { url: "", title: "" },
+                settings: { serverUrl: "http://evil.example", token: "", keepAudio: true, microphoneId: "", microphoneLabel: "" } });
+              return { storage, capture, toast, toggle, created, stopped, startVoice };
             },
             args: [tab.windowId],
           });
@@ -185,6 +220,11 @@ async function run(headless) {
         expect(probes.storage.startsWith("denied"), `content scripts can read chrome.storage.local (${probes.storage})`);
         expect(probes.capture?.ok === false && /side panel/.test(probes.capture.error ?? ""), `forged capture from a content script was not refused: ${JSON.stringify(probes.capture)}`);
         expect(!probes.toast.answered, `forged toast from a content script was answered: ${JSON.stringify(probes.toast)}`);
+        expect(probes.toggle?.ok === false && /side panel/.test(probes.toggle.error ?? ""), `forged recorder:toggle was not refused: ${JSON.stringify(probes.toggle)}`);
+        for (const key of ["created", "stopped", "startVoice"]) {
+          expect(probes[key] === null || probes[key]?.error, `forged ${key} from a content script was answered: ${JSON.stringify(probes[key])}`);
+        }
+        log(`forged recorder messages: toggle -> ${JSON.stringify(probes.toggle)}; entry-created/recorder:stopped/offscreen:start-voice -> ${["created", "stopped", "startVoice"].map((k) => JSON.stringify(probes[k])).join(", ")}`);
         log(`content-script probes: storage ${probes.storage.slice(0, 60)}; capture -> ${JSON.stringify(probes.capture)}; toast -> ${probes.toast.error ?? (probes.toast.answered === undefined ? "no response (ignored)" : JSON.stringify(probes.toast.answered))}`);
 
         // Press Esc in the page: overlay removes itself, sends area-cancelled,

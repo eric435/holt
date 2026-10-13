@@ -6,6 +6,8 @@
  *   src/background/index.ts      -> dist/background.js           (ESM: manifest says "type": "module")
  *   src/sidepanel/index.ts       -> dist/sidepanel.js            (ESM: <script type="module">)
  *   src/permissions/permissions.ts -> dist/permissions.js        (ESM)
+ *   src/offscreen/index.ts       -> dist/offscreen.js            (ESM: the recorders' hidden page)
+ *   src/note/note.ts             -> dist/note.js                 (ESM: the Alt+T note popup)
  *   src/content/area-select.ts   -> dist/content/area-select.js  (IIFE: injected with
  *   src/content/page-helper.ts   -> dist/content/page-helper.js   executeScript({ files }),
  *                                                                  which runs classic scripts only)
@@ -34,7 +36,7 @@ const common = {
   // Readable output: this is loaded unpacked for local use, not shipped minified.
   minify: false,
   sourcemap: "linked",
-  target: "chrome116", // keep in sync with manifest.json minimum_chrome_version
+  target: "chrome127", // keep in sync with manifest.json minimum_chrome_version
   platform: "browser",
   logLevel: "info",
   define: { __NITPICK_VERSION__: JSON.stringify(pkg.version) },
@@ -46,6 +48,8 @@ const STATIC_FILES = [
   ["src/sidepanel/sidepanel.html", "sidepanel.html"],
   ["src/sidepanel/sidepanel.css", "sidepanel.css"],
   ["src/permissions/permissions.html", "permissions.html"],
+  ["src/offscreen/offscreen.html", "offscreen.html"],
+  ["src/note/note.html", "note.html"],
 ];
 
 async function copyStatic() {
@@ -78,6 +82,8 @@ const moduleBuild = {
     background: "src/background/index.ts",
     sidepanel: "src/sidepanel/index.ts",
     permissions: "src/permissions/permissions.ts",
+    offscreen: "src/offscreen/index.ts",
+    note: "src/note/note.ts",
   },
   outdir: dist,
   plugins: [copyStaticPlugin],

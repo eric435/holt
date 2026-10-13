@@ -18,11 +18,17 @@ describe("validateConfig", () => {
       token: "s3cret",
       maxUploadBytes: 1024,
       sessionTitle: "Checkout QA",
+      projectName: "@acme/web",
       allowedOrigins: ["http://localhost:3000", "https://app.test"],
       allowedExtensionIds: ["abcdefghijklmnopabcdefghijklmnop"],
     };
     const { $schema: _ignored, ...expected } = raw;
     expect(validate(raw)).toEqual({ config: expected, warnings: [] });
+  });
+
+  it("measures projectName after trimming, so padding does not count", () => {
+    const padded = `  ${"a".repeat(100)}  `;
+    expect(validate({ projectName: padded }).config).toEqual({ projectName: padded });
   });
 
   it("accepts token: null", () => {
@@ -45,6 +51,12 @@ describe("validateConfig", () => {
     ["maxUploadBytes", -1, /"maxUploadBytes" must be a positive integer/],
     ["maxUploadBytes", "200mb", /"maxUploadBytes" must be a positive integer number of bytes \(got string/],
     ["sessionTitle", [], /"sessionTitle" must be a non-empty string \(got an array\)/],
+    ["projectName", 7, /"projectName" must be a non-empty string \(got number 7\)/],
+    ["projectName", " ", /"projectName" must be a non-empty string/],
+    ["projectName", "a".repeat(101), /"projectName" must be at most 100 characters \(got 101\)/],
+    ["projectName", "acme\nweb", /"projectName" must not contain control/],
+    ["projectName", "acme\u001b[31m", /"projectName" must not contain control/],
+    ["projectName", "acme\u202eweb", /"projectName" must not contain control, zero-width or bidi/],
     ["allowedOrigins", "http://localhost:3000", /"allowedOrigins" must be an array/],
     ["allowedOrigins", ["*"], /must not contain wildcards/],
     ["allowedOrigins", ["http://localhost:3000/"], /exact http\(s\) origins/],

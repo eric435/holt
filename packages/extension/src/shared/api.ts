@@ -1,12 +1,13 @@
 /**
  * Client for the nitpick server's HTTP API (see @nitpick/protocol http.ts).
  *
- * Used by BOTH the service worker (screenshots) and the side panel (screen
- * recordings, voice notes, typed notes). Recordings are created in the panel
- * and a Blob cannot be passed to the worker cheaply (messages are
- * JSON-serialised), so the panel uploads them itself. Both contexts are
- * extension origins with the same host_permissions, so the server sees the
- * same `chrome-extension://<id>` Origin either way.
+ * Used by every context that creates entries: the service worker
+ * (screenshots), the offscreen document (tab recordings, voice notes), the
+ * side panel (window/screen recordings, typed notes) and the note popup.
+ * Recordings are Blobs and a Blob cannot be passed between contexts cheaply
+ * (messages are JSON-serialised), so whoever records uploads. All of them
+ * are extension origins with the same host_permissions, so the server sees
+ * the same `chrome-extension://<id>` Origin either way.
  *
  * Every request carries the custom client header (forces a CORS preflight for
  * any web page that tries to impersonate us, see SECURITY.md) and the token
@@ -185,8 +186,12 @@ function isOkBody(body: unknown): boolean {
  * settings. Settings are read from storage on every call (cheap), because the
  * worker may have been restarted since the last call and the user may have
  * changed them in the panel.
+ *
+ * Pass `config` to skip storage. The offscreen document must: it has no
+ * chrome.storage at all (offscreen documents only get chrome.runtime), so
+ * the worker sends it the server URL and token with each start request.
  */
-export async function getApi(): Promise<Api & { serverUrl: string }> {
-  const settings = await loadSettings();
+export async function getApi(config?: ApiConfig): Promise<Api & { serverUrl: string }> {
+  const settings = config ?? (await loadSettings());
   return { ...createApi(settings), serverUrl: settings.serverUrl };
 }

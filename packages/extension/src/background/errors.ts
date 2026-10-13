@@ -12,7 +12,7 @@ export function friendlyCaptureError(error: unknown): string {
   if (/activeTab|<all_urls>|Cannot access contents|must request permission/i.test(text)) {
     return (
       "Chrome only lets nitpick capture a tab after you invoke nitpick on it. " +
-      "Press a nitpick shortcut (e.g. Alt+Shift+S) or click the nitpick toolbar icon on this tab, " +
+      "Press a nitpick shortcut (e.g. Alt+S) or click the nitpick toolbar icon on this tab, " +
       "then try again. The permission lasts until the tab navigates to another page."
     );
   }
@@ -27,4 +27,28 @@ export function friendlyCaptureError(error: unknown): string {
     return "The tab was closed before the capture finished.";
   }
   return text;
+}
+
+/**
+ * Same idea for chrome.tabCapture.getMediaStreamId / tab-capture
+ * getUserMedia errors. Chrome's wording (Chrome 155):
+ *  - "Extension has not been invoked for the current page (see activeTab
+ *    permission). Chrome pages cannot be captured."  no activeTab grant, or
+ *    a chrome:// page;
+ *  - "Cannot capture a tab with an active stream."    already being captured.
+ */
+export function friendlyRecordingError(error: unknown): string {
+  const text = errorMessage(error);
+  if (/has not been invoked|activeTab/i.test(text)) {
+    return (
+      "Chrome only lets nitpick record a tab after you invoke nitpick on it. " +
+      "Press the record shortcut on the tab itself, or click the nitpick toolbar icon on it, then try again. " +
+      "(chrome:// pages and the Web Store can't be recorded at all.) " +
+      "Or use “Record a window or screen…” in the side panel."
+    );
+  }
+  if (/active stream/i.test(text)) {
+    return "This tab is already being captured (by nitpick or another extension). Stop that capture first.";
+  }
+  return friendlyCaptureError(text);
 }

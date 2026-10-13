@@ -405,6 +405,7 @@ describe("happy path", () => {
       ok: true,
       name: "nitpick",
       version: VERSION,
+      project: { name: path.basename(tempDir ?? ""), source: "directory" },
       session: { id: started.session?.id, entryCount: 2 },
       config: { outputDir: "qa", requiresToken: false },
     });
@@ -425,6 +426,16 @@ describe("happy path", () => {
     expect(notes).toContain("Page: [\\](http://evil) sneaky](http://localhost:5173/checkout)");
     expect(notes).toContain("Coupon field accepts whitespace-only input.");
     expect(notes).toMatch(/_Session ended at .* \(2 entries\)\._\n$/);
+  });
+
+  it("reports the project from projectName, and the standalone banner names it", async () => {
+    const logger = spyLogger();
+    const nitpick = await createInstance({ projectName: "Checkout app" });
+    running = await startStandalone(nitpick, { logger });
+    const status = (await (await fetch(`${running.url}${BASE_PATH}/status`, { headers: EXT_HEADERS })).json()) as StatusResponse;
+    expect(status.project).toEqual({ name: "Checkout app", source: "config" });
+    const banner = logger.info.mock.calls.map((c) => String(c[0]));
+    expect(banner[0]).toBe(`v${VERSION} serving Checkout app at ${running.url}${BASE_PATH}`);
   });
 
   it("returns 404 JSON for unknown routes under the base path", async () => {

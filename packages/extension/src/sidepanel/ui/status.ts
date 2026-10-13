@@ -1,6 +1,11 @@
 /**
  * Server + session status.
  *
+ * The first line names the project the server writes into (from /status,
+ * newer servers only) prominently, then "nitpick <version> · <host:port>"
+ * muted. The project name is also published to storage.session
+ * (`serverInfo`) so the worker can put it in the toolbar tooltip.
+ *
  * Polls GET /status every few seconds while the panel is visible, and stops
  * when it is hidden (document.visibilityState), e.g. when the user switches
  * to another side panel. When the panel is closed the page is destroyed and
@@ -9,6 +14,8 @@
 
 import { getApi } from "../../shared/api.js";
 import { errorMessage } from "../../shared/messages.js";
+import { clearState, getState as getStoredState, setState } from "../../shared/state.js";
+import { serverLabel } from "../server-label.js";
 import { getState, subscribe, update, type PanelState } from "../store.js";
 import { h, replace } from "./dom.js";
 import { toast } from "./toast.js";
@@ -25,6 +32,7 @@ export function mountStatus(root: HTMLElement): void {
   replace(root, h("h2", {}, "Server"), serverLine, sessionBox, controls);
 
   subscribe((state) => render(state));
+  subscribe((state) => void publishProjectName(state));
 
   function render({ server, session, settings }: PanelState): void {
     if (server.kind === "checking") {
@@ -33,11 +41,13 @@ export function mountStatus(root: HTMLElement): void {
       replace(serverLine, dot("red"), h("span", { class: "error-text" }, server.message));
     } else {
       const s = server.status;
+      const label = serverLabel(s, settings.serverUrl);
       replace(
         serverLine,
         dot("green"),
-        `nitpick ${s.version} at ${settings.serverUrl}`,
-        s.config.requiresToken && !settings.token ? h("div", { class: "warn" }, "Server requires a token: set it in Settings.") : null,
+        label.project && h("strong", { class: "project" }, label.project),
+        h("span", { class: "muted" }, label.detail),
+        s.config?.requiresToken && !settings.token ? h("div", { class: "warn" }, "Server requires a token: set it in Settings.") : null,
       );
     }
 
@@ -84,6 +94,20 @@ export function mountStatus(root: HTMLElement): void {
   }
 
   startPolling();
+}
+
+/** Keep storage.session's `serverInfo` in step with what we show (for the toolbar tooltip). */
+let publishedProject: string | null | undefined;
+async function publishProjectName({ server, settings }: PanelState): Promise<void> {
+  if (server.kind === "checking") return;
+  const name = server.kind === "ok" ? serverLabel(server.status, settings.serverUrl).project : null;
+  if (name === publishedProject) return;
+  publishedProject = name;
+  if (name) {
+    if ((await getStoredState("serverInfo"))?.projectName !== name) await setState("serverInfo", { projectName: name });
+  } else {
+    await clearState("serverInfo");
+  }
 }
 
 function dot(color: "green" | "red" | "grey"): HTMLElement {

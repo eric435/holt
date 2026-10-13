@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  The quick-note page (Alt+T). Shown as the toolbar action's popup, set just
+  in time by the worker (src/background/note-popup.ts), or, if Chrome can't
+  open the popup, in a small popup window (?window=1). No inline script or
+  handlers (MV3 CSP): all behaviour is in note.js (src/note/note.ts).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nitpick: note</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+    <script type="module" src="note.js"></script>
+  </head>
+  <body class="note-popup">
+    <form id="form">
+      <label for="text" class="note-page" id="page">Note</label>
+      <textarea id="text" rows="4" autofocus placeholder="What's wrong on this page?"></textarea>
+      <div class="note-footer">
+        <span id="status" class="hint" role="status">Enter saves · Shift+Enter new line · Esc closes</span>
+        <button id="save" type="submit">Save</button>
+      </div>
+    </form>
+  </body>
+</html>

@@ -1,6 +1,21 @@
 /**
- * Shared MediaRecorder plumbing for the screen and voice recorders.
+ * Shared MediaRecorder plumbing for all three recorders: the tab recorder and
+ * the voice recorder (both in the offscreen document) and the window/screen
+ * recorder (side panel). Needs a document (MediaRecorder does not exist in a
+ * service worker), so only pages import this.
  */
+
+/** Video containers/codecs to try, best first (tab and window/screen recordings). */
+export const VIDEO_TYPES = [
+  "video/webm;codecs=vp9,opus",
+  "video/webm;codecs=vp9",
+  "video/webm;codecs=vp8,opus",
+  "video/webm;codecs=vp8",
+  "video/webm",
+] as const;
+
+/** Audio types to try for voice notes. All are in the server's ACCEPTED_MEDIA_TYPES. */
+export const AUDIO_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"] as const;
 
 /** First MIME type in `candidates` this browser can record, or "" (browser default). */
 export function pickMimeType(candidates: readonly string[]): string {

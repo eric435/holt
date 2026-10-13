@@ -65,6 +65,12 @@ into, as hostile.
    characters. Link destinations are only written for `http(s)` URLs and
    are percent-encoded. Emphasis characters are left alone; the worst they
    can do is make text bold.
+7. **The project name.** `GET /status` exposes the project name (from
+   `projectName`, `package.json`, or the directory name) to the extension,
+   which only ever displays it as text. Control, zero-width and bidi
+   characters are stripped (or, in `projectName`, rejected) and it is capped
+   at 100 characters, so a hostile package.json cannot inject terminal
+   escapes into the startup banner.
 
 ## What the server deliberately trusts
 
@@ -99,15 +105,36 @@ as Vite is. Two consequences:
 ## The extension
 
 - Permissions are the minimum: `activeTab`, `sidePanel`, `scripting`,
-  `storage`, plus host permissions for `127.0.0.1` and `localhost` only. No
-  `tabs`, no `<all_urls>`, no `web_accessible_resources`, no
-  `externally_connectable`. The default Manifest V3 content security policy
-  applies, and the side panel never uses `innerHTML`.
+  `storage`, `offscreen`, `tabCapture`, plus host permissions for
+  `127.0.0.1` and `localhost` only. No `tabs`, no `<all_urls>`, no
+  `web_accessible_resources`, no `externally_connectable`. The default
+  Manifest V3 content security policy applies, and no extension page uses
+  `innerHTML`.
+- `tabCapture` records a tab's picture and sound. Chrome only issues a
+  capture stream id for a tab where the user invoked nitpick (a shortcut or
+  a toolbar click: the activeTab grant, which ends when the tab navigates
+  to another page), never for `chrome://` pages, and normally marks
+  a captured tab with its own capture indicator in the tab strip. nitpick
+  also shows "REC" on its toolbar icon while it records. `offscreen` only lets the extension create its
+  own hidden page (the recorders); it grants no access to anything.
+- Microphone access is a per-origin permission the user grants once on
+  nitpick's own permissions page. Voice notes and the live transcript use
+  Chrome's speech recognition, which sends audio to Google's speech
+  service (see the extension README); the audio file goes only to the
+  local server.
 - Content scripts run inside hostile pages. The worker only accepts
-  `area-selected` from the top frame of the tab it injected into, and only
-  accepts capture requests and panel-bound messages from the extension's
-  own pages. Settings storage is set to `TRUSTED_CONTEXTS` so a content
-  script cannot read the token or repoint the server URL.
+  `area-selected` from the top frame of the tab it injected into, only
+  accepts capture and recorder requests and panel-bound messages from the
+  extension's own pages, and only believes recorder reports from its own
+  offscreen document (checked by sender URL). The offscreen document only
+  takes orders from the extension's own pages too, so a page cannot start
+  a recording or make the recorder upload somewhere else. Settings storage
+  is set to `TRUSTED_CONTEXTS` so a content script cannot read the token or
+  repoint the server URL.
+- The worker sends the server URL and token to the offscreen document with
+  each start request (it has no storage access of its own). Runtime
+  messages from an extension page or the worker reach only the extension's
+  own pages and worker, never content scripts.
 - The server URL and token are stored in `chrome.storage.local`, never
   synced to your Google account.
 

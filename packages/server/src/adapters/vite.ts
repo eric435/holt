@@ -34,6 +34,7 @@
 import type { AddressInfo } from "node:net";
 import type { Plugin, ViteDevServer } from "vite";
 import { BASE_PATH } from "@nitpick/protocol";
+import { describeProject } from "../config/project.js";
 import type { NitpickConfig } from "../config/types.js";
 import { createNitpick, type Nitpick } from "../core.js";
 import { isLoopbackAddress } from "../http/cors.js";
@@ -85,10 +86,13 @@ export default function nitpick(options: NitpickViteOptions = {}): Plugin {
         }, next);
       });
 
+      const project = describeProject(current.config.project);
       const httpServer = server.httpServer;
       if (!httpServer) {
         // Middleware mode: the host app owns the server and its lifecycle.
-        logger.info(`mounted at ${BASE_PATH} (middleware mode; sessions end when the process exits)`);
+        logger.info(
+          `serving ${project}, mounted at ${BASE_PATH} (middleware mode; sessions end when the process exits)`,
+        );
         return;
       }
       httpServer.once("listening", () => {
@@ -100,7 +104,7 @@ export default function nitpick(options: NitpickViteOptions = {}): Plugin {
           );
         }
         const origin = originOf(address);
-        logger.info(`API at ${origin}${BASE_PATH}, writing sessions to ${current.config.outputDir}`);
+        logger.info(`serving ${project} at ${origin}${BASE_PATH}, writing sessions to ${current.config.outputDir}`);
         logger.info(`Connect: set the nitpick extension's server URL to ${origin}`);
       });
       httpServer.once("close", () => {

@@ -13,18 +13,40 @@
  *      example page, and click the toolbar icon (Extensions.triggerAction).
  *      That opens the real side panel and grants activeTab.
  *   4. In the side panel: Visible, Full page, Area (dragging with synthetic
- *      mouse events in the page), then a typed note (Ctrl+Enter).
+ *      mouse events in the page), then a typed note (Enter).
  *      Screenshots go panel -> worker -> server; the note goes panel -> server.
- *   5. Check on disk: one session folder; notes.md has a header and entries
- *      1-4 with the right headings and Page links; the PNGs are valid and
+ *   5. Tab recording from the panel's "Record tab" button: panel -> worker
+ *      (chrome.tabCapture.getMediaStreamId, with no user gesture in the
+ *      worker) -> offscreen document (getUserMedia + MediaRecorder) ->
+ *      server. Toolbar badge "REC" while recording; the offscreen document
+ *      is closed again afterwards.
+ *   6. Quick note (Alt+T) through the worker's command handler: the action
+ *      popup opens with the textarea focused, Enter saves, the popup resets
+ *      so a click opens the panel again.
+ *   7. Headless: close the side panel, start a tab recording with the
+ *      command, take a screenshot meanwhile (badge flashes "✓", then goes
+ *      back to "REC"), stop with the command (badge "✓", then cleared).
+ *   8. A second Chrome with fake media devices (--use-fake-device-for-media-stream
+ *      breaks tab capture in Chrome 155, hence a separate browser): voice
+ *      note from the panel (badge "MIC"), a voice note with a microphone id
+ *      that doesn't exist (falls back to the default and says so), and one
+ *      with a microphone picked in the panel's Settings.
+ *   9. Check on disk: one session folder; notes.md has a header and entries
+ *      1-11 with the right headings and Page links; the PNGs are valid and
  *      the full-page one is taller than the viewport one; the example's
  *      fixed header appears exactly once in the full-page PNG (pixel
- *      sampling at the header's position in every tile). Then SIGTERM Vite
- *      and check the "_Session ended at" footer.
- *   6. Check the cross-origin path: the worker's requests succeed (Chrome's
+ *      sampling at the header's position in every tile); recordings and
+ *      voice notes are WebM files. Then SIGTERM Vite and check the
+ *      "_Session ended at" footer.
+ *  10. Check the cross-origin path: the worker's requests succeed (Chrome's
  *      local/private network checks don't block them), whether Chrome sent a
  *      CORS preflight, and that the server answers a preflight for this
  *      extension's origin.
+ *
+ * Keyboard shortcuts can't be pressed through the DevTools protocol, so
+ * commands are run through the worker's `nitpickTest.handleCommand` (see
+ * background/index.ts). That skips the shortcut's user gesture; everything
+ * after it is the real code path.
  *
  * Only processes this script started (by PID) are stopped. Temp dirs are
  * removed even on failure (set KEEP_TEMP=1 to keep them).
@@ -216,11 +238,15 @@ const outDir = join(temp, "out");
 let vite;
 let chrome;
 let cdp;
+let chromeB;
+let cdpB;
 let notesAtEnd = "";
 
 async function cleanup() {
   cdp?.close();
+  cdpB?.close();
   await stopChrome(chrome).catch(() => undefined);
+  await stopChrome(chromeB).catch(() => undefined);
   await stopVite(vite, "SIGKILL").catch(() => undefined); // no-op if it already exited
   if (process.env.KEEP_TEMP) log(`keeping temp dir ${temp}`);
   else rmSync(temp, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
@@ -296,11 +322,13 @@ try {
   const serverLine = await waitFor(
     async () => {
       const text = await evaluate(cdp, panel, "document.querySelector('.server-line')?.innerText ?? ''");
-      return /nitpick .* at /.test(text) ? text : null;
+      return /nitpick .*· /.test(text) ? text : null;
     },
     { timeoutMs: 15_000, what: "the side panel to report the server as reachable" },
   );
-  log(`side panel connected: "${serverLine.trim()}"`);
+  log(`side panel connected: "${serverLine.replace(/\s+/g, " ").trim()}"`);
+  const project = await evaluate(cdp, panel, "document.querySelector('.server-line .project')?.textContent ?? null");
+  log(project ? `server reports project "${project}"` : "server does not report a project name (older server build); panel shows version and host only");
 
   // Opening the side panel animates and shrinks the page's viewport. Wait
   // until its width has stopped changing, or captures race the resize.
@@ -334,7 +362,7 @@ try {
   viewports["Screenshot"] = await pageViewport();
   await clickPanelButton("Visible");
   await waitForEntries(1, `entry 1 (viewport screenshot). Panel says: ${await panelToasts()}`);
-  log("1/4 viewport screenshot written");
+  log("1/11 viewport screenshot written");
 
   // ---- 2. full-page screenshot ------------------------------------------------
   viewports["Screenshot (full page)"] = await pageViewport();
@@ -354,7 +382,7 @@ try {
   check(headerAfter === "visible|", `the fixed header was not restored after the capture (visibility|inline style = ${headerAfter})`);
   const scrollAfter = await evaluate(cdp, page, "scrollY");
   check(scrollAfter === 0, `full-page capture did not restore the scroll position (scrollY=${scrollAfter})`);
-  log("2/4 full-page screenshot written");
+  log("2/11 full-page screenshot written");
 
   // ---- 3. area screenshot: real overlay, synthetic drag ------------------------
   viewports["Screenshot (area)"] = await pageViewport();
@@ -370,17 +398,197 @@ try {
   for (let i = 1; i <= 5; i++) await mouse("mouseMoved", drag.x0 + ((drag.x1 - drag.x0) * i) / 5, drag.y0 + ((drag.y1 - drag.y0) * i) / 5);
   await mouse("mouseReleased", drag.x1, drag.y1);
   await waitForEntries(3, "entry 3 (area screenshot)");
-  log("3/4 area screenshot written");
+  log("3/11 area screenshot written");
 
   // ---- 4. typed note via the panel's API client ---------------------------------
   const noteText = "Coupon field accepts whitespace-only input (e2e).";
   await evaluate(cdp, panel, `(() => {
     const t = document.querySelector('#notes textarea');
     t.value = ${JSON.stringify(noteText)};
-    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   })()`);
   await waitForEntries(4, "entry 4 (note)");
-  log("4/4 note written");
+  log("4/11 note written (Enter in the panel's note field)");
+
+  // Helpers for the recorder steps.
+  const ev = (expr) => evaluate(cdp, worker.sessionId, expr);
+  const badge = () => ev("Promise.all([chrome.action.getBadgeText({}), chrome.action.getTitle({})]).then(([text, title]) => ({ text, title }))");
+  const pageTab = `chrome.tabs.query({}).then(ts => ts.find(t => t.url === ${JSON.stringify(pageUrl)}))`;
+  const command = (name) => ev(`${pageTab}.then(t => { nitpickTest.handleCommand(${JSON.stringify(name)}, t); return true; })`);
+  const offscreenOpen = async () => (await cdp.send("Target.getTargets")).targetInfos.some((t) => t.url.endsWith("/offscreen.html"));
+  const watchOffscreen = async () => {
+    const target = (await cdp.send("Target.getTargets")).targetInfos.find((t) => t.url.endsWith("/offscreen.html"));
+    if (!target) return null;
+    const session = await attach(cdp, target.targetId);
+    await collector.watch(session);
+    offscreenSessions.push(session);
+    return session;
+  };
+  const offscreenSessions = [];
+
+  // ---- 5. tab recording from the panel button --------------------------------------
+  await clickPanelButton("● Record tab");
+  const recBadge = await waitFor(async () => {
+    const b = await badge();
+    return b.text === "REC" ? b : null;
+  }, { what: `the REC badge. Panel says: ${await panelToasts()}` });
+  check(/recording tab since \d\d:\d\d/.test(recBadge.title), `unexpected tooltip while recording: ${recBadge.title}`);
+  check(await offscreenOpen(), "no offscreen document while recording");
+  await watchOffscreen();
+  const panelRecLabel = await evaluate(cdp, panel, "[...document.querySelectorAll('#actions button')].map(b => b.textContent).join('|')");
+  check(panelRecLabel.includes("■ Stop tab recording"), `panel buttons while recording: ${panelRecLabel}`);
+  log(`5/11 tab recording running: badge ${recBadge.text}, tooltip "${recBadge.title}"`);
+  await sleep(2_000);
+  await clickPanelButton("■ Stop tab recording");
+  await waitForEntries(5, `entry 5 (tab recording). Panel says: ${await panelToasts()}`);
+  check((await badge()).text === "", `badge not cleared after the recording: ${JSON.stringify(await badge())}`);
+  await waitFor(async () => !(await offscreenOpen()), { timeoutMs: 8_000, what: "the offscreen document to close when idle" }).catch((e) => check(false, e.message));
+  log("5/11 tab recording written; badge cleared; offscreen document closed");
+
+  // ---- 6. quick note popup (Alt+T) --------------------------------------------------
+  const popupNote = "Saved from the Alt+T popup (e2e).";
+  await command("quick-note");
+  const noteTarget = await waitFor(async () => (await cdp.send("Target.getTargets")).targetInfos.find((t) => t.url.includes("/note.html")), {
+    what: "the note popup",
+  });
+  const note = await attach(cdp, noteTarget.targetId);
+  await collector.watch(note);
+  await waitFor(() => evaluate(cdp, note, "document.readyState === 'complete' && document.getElementById('page').textContent.startsWith('Note on:')"), { what: "the note popup to load its page context" });
+  const focused = await evaluate(cdp, note, "document.activeElement?.id ?? null");
+  check(focused === "text", `note popup textarea not focused (activeElement: ${focused})`);
+  const popupMode = noteTarget.url.includes("window=1") ? "fallback popup window" : "action popup";
+  const popupPage = await evaluate(cdp, note, "document.getElementById('page').textContent");
+  const exampleTitle = await evaluate(cdp, page, "document.title");
+  check(popupPage === `Note on: ${exampleTitle}`, `note popup is not attached to the example page ("${exampleTitle}"): ${popupPage}`);
+  check((await ev("chrome.action.getPopup({})")) === "", "the action popup was not reset after the note popup opened (clicks would no longer open the panel)");
+  await cdp.send("Input.insertText", { text: popupNote }, note);
+  for (const type of ["keyDown", "keyUp"]) {
+    await cdp.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) }, note);
+  }
+  await waitForEntries(6, "entry 6 (note from the popup)");
+  await waitFor(async () => (await panelToasts()).includes("Note #6 saved"), { what: "the panel to announce the popup's note" }).catch((e) => check(false, e.message));
+  log(`6/11 popup note written (${popupMode}, textarea focused=${focused === "text"}, "${popupPage}")`);
+
+  // ---- 7. headless: panel closed --------------------------------------------------------
+  await cdp.send("Target.closeTarget", { targetId: panelTarget.targetId });
+  await waitFor(async () => !(await cdp.send("Target.getTargets")).targetInfos.some((t) => t.url === panelUrl), { what: "the side panel to close" });
+  await command("toggle-recording");
+  await waitFor(async () => (await badge()).text === "REC", { what: "REC badge from the toggle-recording command" });
+  await watchOffscreen();
+  await sleep(1_000);
+  await command("screenshot-viewport");
+  await waitForEntries(7, "entry 7 (screenshot while recording, panel closed)");
+  const flash = await waitFor(async () => {
+    const b = await badge();
+    return b.text === "✓" ? b : null;
+  }, { timeoutMs: 3_000, what: "the ✓ flash for a headless screenshot" }).catch((e) => (check(false, e.message), null));
+  const restored = await waitFor(async () => {
+    const b = await badge();
+    return b.text === "REC" ? b : null;
+  }, { timeoutMs: 6_000, what: "the REC badge to come back after the ✓ flash" }).catch((e) => (check(false, e.message), null));
+  log(`7/11 headless screenshot while recording: badge ${flash?.text} then ${restored?.text}`);
+  await command("toggle-recording");
+  await waitForEntries(8, "entry 8 (tab recording stopped by command, panel closed)");
+  const afterStop = await waitFor(async () => {
+    const b = await badge();
+    return b.text === "✓" || b.text === "" ? b : null;
+  }, { what: "the badge after the headless recording" });
+  await waitFor(async () => (await badge()).text === "", { timeoutMs: 6_000, what: "the badge to clear" }).catch((e) => check(false, e.message));
+  check(!/recording/.test((await badge()).title), `tooltip still says recording: ${(await badge()).title}`);
+  log(`8/11 headless tab recording written (badge "${afterStop.text}" then cleared)`);
+
+  // ---- 8. voice notes: a second Chrome with fake media devices -------------------------
+  chromeB = await launchChrome({
+    headless: true,
+    extensionDir: DIST,
+    extraArgs: ["--window-size=1280,900", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+  });
+  cdpB = await Cdp.connect(chromeB.wsUrl);
+  const collectorB = errorCollector(cdpB);
+  const workerB = await loadExtension(cdpB, DIST, collectorB, { log });
+  require_(workerB, "the extension's service worker never started in the second Chrome");
+  const evB = (expr) => evaluate(cdpB, workerB.sessionId, expr);
+  await evB(`chrome.storage.local.set({ serverUrl: ${JSON.stringify(origin)} })`);
+  const { targetId: pageTargetB } = await cdpB.send("Target.createTarget", { url: pageUrl });
+  const pageB = await attach(cdpB, pageTargetB);
+  await collectorB.watch(pageB);
+  await waitFor(() => evaluate(cdpB, pageB, "document.readyState === 'complete'"), { what: "the example page in the second Chrome" });
+  await clickToolbarIcon(cdpB, workerB.extensionId, pageUrl);
+  const panelB = await attach(cdpB, (await waitFor(
+    async () => (await cdpB.send("Target.getTargets")).targetInfos.find((t) => t.url === panelUrl.replace(worker.extensionId, workerB.extensionId)),
+    { what: "the side panel in the second Chrome" },
+  )).targetId);
+  await collectorB.watch(panelB);
+  const badgeB = () => evB("chrome.action.getBadgeText({})");
+  const toastsB = () => evaluate(cdpB, panelB, "document.getElementById('toasts').innerText").catch(() => "");
+  const clickB = (label) => evaluate(cdpB, panelB, `(() => {
+    const b = [...document.querySelectorAll('#actions button')].find(b => b.textContent.trim() === ${JSON.stringify(label)});
+    if (!b) throw new Error('no button ' + ${JSON.stringify(label)});
+    b.click();
+  })()`);
+  const commandB = (name) => evB(`chrome.tabs.query({}).then(ts => ts.find(t => t.url === ${JSON.stringify(pageUrl)})).then(t => { nitpickTest.handleCommand(${JSON.stringify(name)}, t); return true; })`);
+  const offscreenB = async () => {
+    const target = (await cdpB.send("Target.getTargets")).targetInfos.find((t) => t.url.endsWith("/offscreen.html"));
+    if (target) {
+      const session = await attach(cdpB, target.targetId);
+      await collectorB.watch(session);
+      offscreenSessionsB.push(session);
+    }
+  };
+  const offscreenSessionsB = [];
+  await waitFor(async () => /nitpick .*· /.test(await evaluate(cdpB, panelB, "document.querySelector('.server-line')?.innerText ?? ''")), { what: "panel B to connect" });
+
+  // 8a. from the panel button
+  await clickB("🎙 Voice note");
+  await waitFor(async () => (await badgeB()) === "MIC", { what: `the MIC badge. Panel says: ${await toastsB()}` });
+  await offscreenB();
+  const transcriptShown = await evaluate(cdpB, panelB, "!document.querySelector('.transcript').hidden");
+  check(transcriptShown, "panel does not show the live transcript box during a voice note");
+  await sleep(2_000);
+  const micInUse = await evB("chrome.storage.session.get('recordingVoice').then(s => s.recordingVoice?.microphoneLabel)");
+  await clickB("■ Stop voice note");
+  await waitForEntries(9, `entry 9 (voice note from the panel). Panel says: ${await toastsB()}`);
+  log(`9/11 voice note from the panel (mic "${micInUse}", badge MIC). Panel says: ${(await toastsB()).replace(/\s*×\s*/g, " | ").trim() || "(nothing)"}`);
+
+  // 8b. a microphone that doesn't exist -> default, with a message
+  await evB(`chrome.storage.local.set({ microphoneId: "no-such-device", microphoneLabel: "Gone Mic" })`);
+  await commandB("toggle-voice");
+  await waitFor(async () => (await toastsB()).includes("Selected microphone not found; used the default"), { what: `the microphone fallback message. Panel says: ${await toastsB()}` })
+    .catch((e) => check(false, e.message));
+  const fallbackTitle = await evB("chrome.action.getTitle({})");
+  check(/selected one not found/.test(fallbackTitle), `toolbar tooltip does not mention the microphone fallback: ${fallbackTitle}`);
+  await sleep(1_500);
+  await commandB("toggle-voice");
+  await waitForEntries(10, "entry 10 (voice note with a missing microphone)");
+  log("10/11 voice note with a missing microphone fell back to the default and said so");
+
+  // 8c. pick a real (fake) device in Settings
+  const picked = await evaluate(cdpB, panelB, `(async () => {
+    const select = document.querySelector('.mic-picker select');
+    for (let i = 0; i < 50 && ![...select.options].some(o => o.text === 'Fake Audio Input 1'); i++) await new Promise(r => setTimeout(r, 100));
+    const option = [...select.options].find(o => o.text === 'Fake Audio Input 1');
+    if (!option) return { error: [...select.options].map(o => o.text).join(', ') };
+    select.value = option.value;
+    select.dispatchEvent(new Event('change'));
+    return { options: [...select.options].map(o => o.text) };
+  })()`);
+  check(!picked.error, `Fake Audio Input 1 not offered by the microphone picker: ${picked.error}`);
+  await waitFor(async () => (await evB("chrome.storage.local.get('microphoneLabel').then(s => s.microphoneLabel)")) === "Fake Audio Input 1", { what: "the picked microphone to be saved" })
+    .catch((e) => check(false, e.message));
+  await commandB("toggle-voice");
+  const used = await waitFor(async () => (await evB("chrome.storage.session.get('recordingVoice').then(s => s.recordingVoice?.microphoneLabel ?? null)")), { what: "voice note state" });
+  check(used === "Fake Audio Input 1", `voice note used "${used}", expected the picked "Fake Audio Input 1"`);
+  await sleep(1_500);
+  await commandB("toggle-voice");
+  await waitForEntries(11, "entry 11 (voice note with the picked microphone)");
+  log(`11/11 voice note with the picked microphone ("${used}"); picker offered: ${picked.options?.join(", ")}`);
+  for (const [name, session] of [["worker B", workerB.sessionId], ["side panel B", panelB], ["example page B", pageB], ...offscreenSessionsB.map((s) => ["offscreen B", s])]) {
+    for (const e of collectorB.get(session)) check(false, `${name}: ${e}`);
+  }
+  cdpB.close();
+  cdpB = null;
+  await stopChrome(chromeB);
+  chromeB = null;
 
   check(!(await viteOverlay()), "a Vite error overlay appeared during the test");
 
@@ -432,8 +640,11 @@ try {
   check(/^- Started: \S+$/m.test(notes), "notes.md header has no 'Started:' line");
 
   const entries = parseEntries(notes);
-  const expected = ["Screenshot", "Screenshot (full page)", "Screenshot (area)", "Note"];
-  check(entries.length === 4, `expected 4 entries, found ${entries.length}`);
+  const expected = [
+    "Screenshot", "Screenshot (full page)", "Screenshot (area)", "Note", "Recording", "Note",
+    "Screenshot", "Recording", "Voice note", "Voice note", "Voice note",
+  ];
+  check(entries.length === expected.length, `expected ${expected.length} entries, found ${entries.length}`);
   expected.forEach((label, i) => {
     const e = entries[i];
     if (!check(e, `entry ${i + 1} missing`)) return;
@@ -442,6 +653,16 @@ try {
     check(e.pageUrl?.startsWith(pageUrl), `entry ${i + 1} Page link is ${e.pageUrl ?? "missing"}, expected ${pageUrl}`);
   });
   check(entries[3]?.block.includes(noteText), "note text not found in entry 4");
+  check(entries[5]?.block.includes(popupNote), "popup note text not found in entry 6");
+  // Recordings and voice notes: the linked file exists and is WebM (EBML magic 1A 45 DF A3).
+  for (const [i, e] of entries.entries()) {
+    if (!e || !["Recording", "Voice note"].includes(e.label)) continue;
+    const link = e.block.match(/\]\(\.\/([^)]+\.webm)\)/)?.[1];
+    if (!check(link, `entry ${i + 1} (${e.label}) has no .webm link`)) continue;
+    const bytes = readFileSync(join(sessionDir, link));
+    check(bytes.length > 1000 && bytes.readUInt32BE(0) === 0x1a45dfa3, `${link} is not a WebM file (${bytes.length} bytes)`);
+    log(`${e.label} #${i + 1}: ${link} ${bytes.length} bytes`);
+  }
 
   const pngs = {};
   for (const [i, e] of entries.slice(0, 3).entries()) {
@@ -500,7 +721,7 @@ try {
   }
 
   // ---- console errors in the extension -------------------------------------------
-  for (const [name, session] of [["worker", worker.sessionId], ["side panel", panel], ["example page", page]]) {
+  for (const [name, session] of [["worker", worker.sessionId], ["side panel", panel], ["example page", page], ["note popup", note], ...offscreenSessions.map((x) => ["offscreen", x])]) {
     for (const e of collector.get(session)) check(false, `${name}: ${e}`);
   }
 
@@ -509,7 +730,7 @@ try {
   check(exit, "Vite did not exit within 10 s of SIGTERM");
   notesAtEnd = readNotes(outDir);
   const lastLine = notesAtEnd.trimEnd().split("\n").at(-1);
-  check(/^_Session ended at \S+ \(4 entries\)\._$/.test(lastLine), `notes.md does not end with the session footer; last line: ${JSON.stringify(lastLine)}`);
+  check(/^_Session ended at \S+ \(11 entries\)\._$/.test(lastLine), `notes.md does not end with the session footer; last line: ${JSON.stringify(lastLine)}`);
   log(`Vite exited (${exit ? `code ${exit.code}, signal ${exit.sig}` : "killed"}); last line: ${lastLine}`);
 } catch (error) {
   failures.push(error instanceof Fatal ? error.message : `${error.stack ?? error}`);

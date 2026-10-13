@@ -3,7 +3,7 @@
   "name": "nitpick",
   "version": "0.0.0",
   "description": "Screenshots, screen recordings and notes for QA, written straight into your repo by the local nitpick server.",
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "127",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -24,33 +24,51 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["activeTab", "sidePanel", "scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "scripting",
+    "storage",
+    "offscreen",
+    "tabCapture"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
   "commands": {
-    "open-panel": {
-      "suggested_key": { "default": "Alt+Shift+N" },
-      "description": "Open the nitpick side panel"
-    },
     "screenshot-viewport": {
-      "suggested_key": { "default": "Alt+Shift+S" },
+      "suggested_key": {
+        "default": "Alt+S"
+      },
       "description": "Screenshot the visible part of the page"
     },
-    "screenshot-full": {
-      "suggested_key": { "default": "Alt+Shift+F" },
-      "description": "Screenshot the full page (scroll and stitch)"
-    },
     "screenshot-area": {
-      "suggested_key": { "default": "Alt+Shift+A" },
+      "suggested_key": {
+        "default": "Alt+X"
+      },
       "description": "Screenshot a selected area"
     },
-    "toggle-recording": {
-      "description": "Start/stop screen recording (opens the panel; starting needs a click)"
-    },
     "toggle-voice": {
+      "suggested_key": {
+        "default": "Alt+A"
+      },
       "description": "Start/stop a voice note"
     },
+    "toggle-recording": {
+      "suggested_key": {
+        "default": "Alt+D"
+      },
+      "description": "Start/stop recording this tab"
+    },
+    "screenshot-full": {
+      "description": "Screenshot the full page (scroll and stitch); suggested: Alt+W"
+    },
     "quick-note": {
-      "description": "Open the panel with the note field focused"
+      "description": "Type a note about this page; suggested: Alt+T"
+    },
+    "open-panel": {
+      "description": "Open the nitpick side panel"
     }
   }
 }

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,5 +37,22 @@ describe("createNitpick startup logging", () => {
     expect(warnings).toContain("chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba");
     expect(warnings).toMatch(/host is set to "localhost"/);
     expect(logger.warn).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("createNitpick project identity", () => {
+  it("resolves the project from <cwd>/package.json once, at startup", async () => {
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/web" }));
+    const nitpick = await createNitpick({ cwd: dir, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } });
+    expect(nitpick.config.project).toEqual({ name: "@acme/web", source: "package.json" });
+  });
+
+  it("starts with the directory name and one warning when package.json is broken", async () => {
+    await writeFile(path.join(dir, "package.json"), "{");
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const nitpick = await createNitpick({ cwd: dir, logger });
+    expect(nitpick.config.project).toEqual({ name: path.basename(dir), source: "directory" });
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(String(logger.warn.mock.calls[0]?.[0])).toMatch(/package\.json is not valid JSON/);
   });
 });

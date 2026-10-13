@@ -1,6 +1,7 @@
 /**
- * User settings: where the server is, the optional shared token, and whether
- * voice notes keep their audio file.
+ * User settings: where the server is, the optional shared token, whether
+ * voice notes keep their audio file, which microphone to record from, and
+ * one UI flag (the shortcut hint was dismissed).
  *
  * Storage: everything lives in `chrome.storage.local` (this device only).
  *  - Not `storage.sync`: a server URL synced to another of the user's
@@ -30,13 +31,32 @@ export interface Settings {
   token: string;
   /** Upload the audio of voice notes, not just the transcript. */
   keepAudio: boolean;
+  /**
+   * `deviceId` from navigator.mediaDevices.enumerateDevices() of the
+   * microphone to record voice notes with; "" means the system default.
+   * Device ids are per origin (chrome-extension://<id>), and the side panel
+   * that lists them and the offscreen document that records share that
+   * origin, so an id picked in the panel is valid in the recorder.
+   */
+  microphoneId: string;
+  /** The device's label when it was picked, for display ("" if unknown). */
+  microphoneLabel: string;
+  /** The user dismissed the "set the remaining shortcuts" hint in the panel. */
+  hideShortcutHint: boolean;
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = {
   serverUrl: DEFAULT_SERVER_URL,
   token: "",
   keepAudio: true,
+  microphoneId: "",
+  microphoneLabel: "",
+  hideShortcutHint: false,
 };
+
+/** Device ids are opaque ~64-char hashes; anything far longer is junk. */
+const MAX_DEVICE_ID_LENGTH = 512;
+const MAX_DEVICE_LABEL_LENGTH = 200;
 
 // ---------------------------------------------------------------------------
 // Validation (pure)
@@ -113,7 +133,23 @@ export function normalizeSettings(stored: Partial<Record<keyof Settings, unknown
     serverUrl: validated?.ok ? validated.url : DEFAULT_SETTINGS.serverUrl,
     token: typeof stored.token === "string" ? stored.token.trim() : DEFAULT_SETTINGS.token,
     keepAudio: typeof stored.keepAudio === "boolean" ? stored.keepAudio : DEFAULT_SETTINGS.keepAudio,
+    ...normalizeMicrophone(stored.microphoneId, stored.microphoneLabel),
+    hideShortcutHint: stored.hideShortcutHint === true,
   };
+}
+
+/**
+ * Microphone choice from storage. An id is only kept if it is a sane string;
+ * the label is display-only and is dropped together with an invalid id (a
+ * label without an id would claim a device we don't use).
+ */
+export function normalizeMicrophone(id: unknown, label: unknown): Pick<Settings, "microphoneId" | "microphoneLabel"> {
+  if (typeof id !== "string" || id.length > MAX_DEVICE_ID_LENGTH || id.trim() === "" || id === "default") {
+    // "default" is Chrome's alias for the system default device: same as "".
+    return { microphoneId: "", microphoneLabel: "" };
+  }
+  const cleanLabel = typeof label === "string" ? label.trim().slice(0, MAX_DEVICE_LABEL_LENGTH) : "";
+  return { microphoneId: id, microphoneLabel: cleanLabel };
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +237,7 @@ export async function restrictStorageAccess(): Promise<void> {
 // Storage (thin wrappers over chrome.storage.local)
 // ---------------------------------------------------------------------------
 
-const KEYS = ["serverUrl", "token", "keepAudio"] as const;
+const KEYS = ["serverUrl", "token", "keepAudio", "microphoneId", "microphoneLabel", "hideShortcutHint"] as const;
 
 export async function loadSettings(): Promise<Settings> {
   await migrateFromSync();
@@ -218,6 +254,9 @@ export async function saveSettings(update: Partial<Settings>): Promise<Settings>
   }
   if (update.keepAudio !== undefined) patch.keepAudio = update.keepAudio;
   if (update.token !== undefined) patch.token = update.token.trim();
+  // "" (or junk) selects the system default and clears the label.
+  if (update.microphoneId !== undefined) Object.assign(patch, normalizeMicrophone(update.microphoneId, update.microphoneLabel ?? ""));
+  if (update.hideShortcutHint !== undefined) patch.hideShortcutHint = update.hideShortcutHint;
   if (Object.keys(patch).length) await chrome.storage.local.set(patch);
   return loadSettings();
 }
