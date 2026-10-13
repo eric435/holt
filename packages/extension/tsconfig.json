@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The extension runs in Chrome only: a service worker, an extension page
+    // (the side panel) and content scripts. All of them have DOM typings
+    // available (the worker lacks `document`, which we simply don't touch there).
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["chrome"],
+    "noEmit": true
+  },
+  "include": ["src"]
+}

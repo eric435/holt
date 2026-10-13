@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  Opened in a normal tab when the side panel can't get microphone access.
+  Chrome may not display permission prompts inside a side panel, but it does
+  in a tab. The permission belongs to the extension's origin, so granting it
+  here also unlocks the side panel.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nitpick: microphone access</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+    <script type="module" src="permissions.js"></script>
+  </head>
+  <body>
+    <main style="max-width: 520px; margin: 40px auto">
+      <section class="card">
+        <h2>Microphone access</h2>
+        <p>nitpick records voice notes from the side panel. Chrome needs your permission to use the microphone for this extension.</p>
+        <button id="grant" class="big">Allow microphone</button>
+        <p id="result" class="hint" role="status"></p>
+      </section>
+    </main>
+  </body>
+</html>

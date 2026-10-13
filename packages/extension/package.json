@@ -1,0 +1,19 @@
+{
+  "name": "@nitpick/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "nitpick Chrome extension (Manifest V3): screenshots, screen recordings, voice and typed notes, sent to the local nitpick server.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs && node scripts/check-manifest.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "check-manifest": "node scripts/check-manifest.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nitpick/protocol": "workspace:*"
+  }
+}
