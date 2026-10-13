@@ -1,0 +1,26 @@
+{
+  "name": "nitpick-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Monorepo for nitpick: unobtrusive screenshots, recordings and notes for QA, written straight into your repo.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/**' run build",
+    "test": "pnpm -r --filter './packages/**' run test",
+    "typecheck": "pnpm -r --filter './packages/**' run typecheck",
+    "dev:server": "pnpm --filter nitpick-notes run dev",
+    "dev:extension": "pnpm --filter @nitpick/extension run dev"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
