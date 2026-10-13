@@ -126,8 +126,8 @@ src/
   background/     service worker. Owns nothing long-lived (MV3 workers are
                   killed when idle); state lives in chrome.storage.session.
                   Handles keyboard commands, takes screenshots
-                  (chrome.tabs.captureVisibleTab), stitches full-page captures,
-                  and is the only context that talks to the server.
+                  (chrome.tabs.captureVisibleTab) and stitches full-page
+                  captures.
   sidepanel/      the UI. Buttons for every action, status of the server and
                   session, typed notes, and the media recorders (screen via
                   getDisplayMedia, voice via getUserMedia + MediaRecorder,
@@ -138,8 +138,11 @@ src/
                   and the scroll helper for full-page capture. Runs in the
                   page's world, so it is kept tiny and sends results back to
                   the service worker and exits.
-  shared/         typed message bus between the three contexts, storage keys,
-                  settings (server URL, token).
+  shared/         typed message bus between the three contexts, settings
+                  (server URL, token), and the server API client. The client
+                  is shared because Blobs cannot be passed between extension
+                  contexts cheaply: the worker uploads screenshots it took,
+                  the side panel uploads recordings it made.
 ```
 
 Permissions are the minimum: `activeTab` (granted by a hotkey or clicking the
