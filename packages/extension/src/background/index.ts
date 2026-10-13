@@ -130,7 +130,7 @@ onStateChanged("serverInfo", () => void refreshIndicator());
 // every start in case an earlier build turned it on (otherwise onClicked
 // would never fire).
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error: unknown) => {
-  console.warn("[nitpick] setPanelBehavior failed", error);
+  console.warn("[holt] setPanelBehavior failed", error);
 });
 chrome.action.onClicked.addListener((tab) => openSidePanel(tab.windowId));
 
@@ -145,7 +145,7 @@ void reconcileRecordingState().then(refreshIndicator);
  * inside this worker (DevTools / CDP) can reach it: web pages, content
  * scripts and other extensions can't see the worker's global scope.
  */
-(globalThis as { nitpickTest?: unknown }).nitpickTest = { handleCommand };
+(globalThis as { holtTest?: unknown }).holtTest = { handleCommand };
 
 // ---------------------------------------------------------------------------
 

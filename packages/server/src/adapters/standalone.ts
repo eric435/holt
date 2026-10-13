@@ -1,6 +1,6 @@
 /**
- * Standalone adapter: a bare node:http server that serves only nitpick.
- * This is what `npx nitpick` runs.
+ * Standalone adapter: a bare node:http server that serves only holt.
+ * This is what `npx holt` runs.
  *
  * Responsibilities beyond "call the handler":
  *  - bind to config.host:config.port (loopback by default) and warn loudly
@@ -11,8 +11,8 @@
  */
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { BASE_PATH, TOKEN_HEADER } from "@nitpick/protocol";
-import type { Nitpick } from "../core.js";
+import { BASE_PATH, TOKEN_HEADER } from "@holt/protocol";
+import type { Holt } from "../core.js";
 import { isLoopbackHostname } from "../http/cors.js";
 import { sendJson } from "../http/errors.js";
 import { describeProject } from "../config/project.js";
@@ -34,9 +34,9 @@ export interface StandaloneServer {
   close(): Promise<void>;
 }
 
-export async function startStandalone(nitpick: Nitpick, options: StandaloneOptions = {}): Promise<StandaloneServer> {
+export async function startStandalone(holt: Holt, options: StandaloneOptions = {}): Promise<StandaloneServer> {
   const logger = options.logger ?? createConsoleLogger();
-  const { config } = nitpick;
+  const { config } = holt;
 
   // Refuse rather than warn: on a non-loopback interface, other machines
   // can reach us, and without a token the access checks would rest on
@@ -44,13 +44,13 @@ export async function startStandalone(nitpick: Nitpick, options: StandaloneOptio
   if (!isLoopbackHostname(config.host) && config.token === null) {
     throw new Error(
       `Refusing to listen on "${config.host}" without a token: other machines on your network could ` +
-        `write into ${config.outputDir}. Set "token" in nitpick.config.json (or pass --token), ` +
+        `write into ${config.outputDir}. Set "token" in holt.config.json (or pass --token), ` +
         `or use the default host 127.0.0.1.`,
     );
   }
 
   const server = http.createServer((req, res) => {
-    void nitpick.handler(req, res).then((handled) => {
+    void holt.handler(req, res).then((handled) => {
       if (!handled) {
         sendJson(res, 404, {
           ok: false,
@@ -74,12 +74,12 @@ export async function startStandalone(nitpick: Nitpick, options: StandaloneOptio
         `this server; only requests with the token are accepted from them.`,
     );
   }
-  printBanner(logger, nitpick, url);
+  printBanner(logger, holt, url);
 
   let closing: Promise<void> | null = null;
   const close = (): Promise<void> => {
     closing ??= (async () => {
-      await nitpick.close();
+      await holt.close();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
         // close() waits for keep-alive connections to go idle; don't.
@@ -116,7 +116,7 @@ function listen(server: http.Server, port: number, host: string): Promise<void> 
     const onError = (err: NodeJS.ErrnoException): void => {
       if (err.code === "EADDRINUSE") {
         reject(
-          new Error(`Port ${port} on ${host} is already in use. Is nitpick already running? Try --port <other>.`),
+          new Error(`Port ${port} on ${host} is already in use. Is holt already running? Try --port <other>.`),
         );
       } else {
         reject(err);
@@ -135,11 +135,11 @@ function formatHost(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
-function printBanner(logger: Logger, { config }: Nitpick, url: string): void {
+function printBanner(logger: Logger, { config }: Holt, url: string): void {
   logger.info(`v${VERSION} serving ${describeProject(config.project)} at ${url}${BASE_PATH}`);
   logger.info(`Writing sessions to ${config.outputDir}`);
   if (config.configFile) logger.info(`Config: ${config.configFile}`);
-  logger.info(`Connect: open the nitpick extension's side panel and set the server URL to ${url}`);
+  logger.info(`Connect: open the holt extension's side panel and set the server URL to ${url}`);
   if (config.token !== null) {
     logger.info(`A token is required (${TOKEN_HEADER}); enter the same token in the extension settings.`);
   }

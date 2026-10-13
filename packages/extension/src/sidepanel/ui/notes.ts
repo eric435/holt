@@ -3,7 +3,7 @@
  * same keys as the Alt+T note popup; see shared/note-keys.ts).
  */
 
-import type { Entry } from "@nitpick/protocol";
+import type { Entry } from "@holt/protocol";
 import { errorMessage } from "../../shared/messages.js";
 import { noteKeyAction } from "../../shared/note-keys.js";
 import { getActivePage } from "../page.js";

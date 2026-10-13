@@ -1,5 +1,5 @@
 /**
- * Config loading: defaults < nitpick.config.json < overrides.
+ * Config loading: defaults < holt.config.json < overrides.
  *
  * "Overrides" are whatever the host passes programmatically: CLI flags for
  * the standalone server, plugin options for Vite. They win because they are
@@ -15,16 +15,16 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { CONFIG_FILE_NAME } from "@nitpick/protocol";
+import { CONFIG_FILE_NAME } from "@holt/protocol";
 import { DEFAULTS } from "./defaults.js";
 import { readPackageJson, resolveProject } from "./project.js";
-import type { NitpickConfig, ResolvedConfig } from "./types.js";
+import type { HoltConfig, ResolvedConfig } from "./types.js";
 import { ConfigError, validateConfig } from "./validate.js";
 
 export interface LoadConfigOptions {
   /**
    * Explicit config file path (e.g. from `--config`). When set, the file
-   * must exist. When unset, `<cwd>/nitpick.config.json` is used if present.
+   * must exist. When unset, `<cwd>/holt.config.json` is used if present.
    */
   configFile?: string;
   /** Label for override errors, e.g. "command line flags" or "Vite plugin options". */
@@ -39,7 +39,7 @@ export interface LoadedConfig {
 
 export async function loadConfig(
   cwd: string,
-  overrides: NitpickConfig = {},
+  overrides: HoltConfig = {},
   options: LoadConfigOptions = {},
 ): Promise<LoadedConfig> {
   const root = path.resolve(cwd);
@@ -48,7 +48,7 @@ export async function loadConfig(
   const explicit = options.configFile !== undefined;
   const configPath = path.resolve(root, options.configFile ?? CONFIG_FILE_NAME);
 
-  let fromFile: NitpickConfig = {};
+  let fromFile: HoltConfig = {};
   let configFile: string | null = null;
   const text = await readOptional(configPath);
   if (text === null) {

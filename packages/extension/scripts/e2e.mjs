@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * End-to-end test: the real extension in headless Chrome against the real
- * nitpick server, mounted in the example Vite app, checked on disk.
+ * holt server, mounted in the example Vite app, checked on disk.
  *
  *   1. Build the server (if packages/server/dist is missing) and the extension.
  *   2. Start examples/vite-app with the Vite CLI on a free port
  *      (--port N --strictPort). It runs from a temp copy whose
- *      nitpick.config.json points outputDir at a temp folder, so nothing is
+ *      holt.config.json points outputDir at a temp folder, so nothing is
  *      written into examples/vite-app. `node_modules` in the copy only
- *      contains symlinks to `vite` and `nitpick-notes`.
+ *      contains symlinks to `vite` and `holt`.
  *   3. Load the extension, point its serverUrl at the Vite origin, open the
  *      example page, and click the toolbar icon (Extensions.triggerAction).
  *      That opens the real side panel and grants activeTab.
@@ -44,14 +44,14 @@
  *      extension's origin.
  *
  * Keyboard shortcuts can't be pressed through the DevTools protocol, so
- * commands are run through the worker's `nitpickTest.handleCommand` (see
+ * commands are run through the worker's `holtTest.handleCommand` (see
  * background/index.ts). That skips the shortcut's user gesture; everything
  * after it is the real code path.
  *
  * Only processes this script started (by PID) are stopped. Temp dirs are
  * removed even on failure (set KEEP_TEMP=1 to keep them).
  *
- * Usage: pnpm --filter @nitpick/extension e2e
+ * Usage: pnpm --filter @holt/extension e2e
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -104,12 +104,12 @@ function run(cmd, args, what) {
 }
 
 function build() {
-  if (!existsSync(join(SERVER_PKG, "dist/vite.js"))) run("pnpm", ["--filter", "nitpick-notes", "build"], "building the server");
-  run("pnpm", ["--filter", "@nitpick/extension", "build"], "building the extension");
+  if (!existsSync(join(SERVER_PKG, "dist/vite.js"))) run("pnpm", ["--filter", "holt", "build"], "building the server");
+  run("pnpm", ["--filter", "@holt/extension", "build"], "building the extension");
 }
 
 // ---------------------------------------------------------------------------
-// Vite (the example app with the nitpick plugin)
+// Vite (the example app with the holt plugin)
 // ---------------------------------------------------------------------------
 
 function freePort() {
@@ -123,16 +123,16 @@ function freePort() {
   });
 }
 
-/** Copy the example app into `appDir`, redirecting nitpick's outputDir to `outDir`. */
+/** Copy the example app into `appDir`, redirecting holt's outputDir to `outDir`. */
 function prepareApp(appDir, outDir) {
   cpSync(EXAMPLE, appDir, {
     recursive: true,
     filter: (src) => !["node_modules", "qa", "dist"].includes(basename(src)) || src === EXAMPLE,
   });
-  const config = JSON.parse(readFileSync(join(EXAMPLE, "nitpick.config.json"), "utf8"));
+  const config = JSON.parse(readFileSync(join(EXAMPLE, "holt.config.json"), "utf8"));
   config.outputDir = outDir; // absolute: the server resolves it against the root, which keeps it as is
   delete config.$schema; // points into node_modules; not needed here
-  writeFileSync(join(appDir, "nitpick.config.json"), JSON.stringify(config, null, 2));
+  writeFileSync(join(appDir, "holt.config.json"), JSON.stringify(config, null, 2));
   // tsconfig.json extends the repo's base config by a relative path, which
   // would not resolve from the temp copy (Vite's esbuild transform reads it):
   // point it at the absolute path instead.
@@ -146,7 +146,7 @@ function prepareApp(appDir, outDir) {
   }
   // Only the two packages vite.config.ts imports, as symlinks to the workspace.
   mkdirSync(join(appDir, "node_modules"));
-  for (const name of ["vite", "nitpick-notes"]) {
+  for (const name of ["vite", "holt"]) {
     symlinkSync(realpathSync(join(EXAMPLE, "node_modules", name)), join(appDir, "node_modules", name), "dir");
   }
   return config;
@@ -232,7 +232,7 @@ function parseEntries(notes) {
 // Main
 // ---------------------------------------------------------------------------
 
-const temp = mkdtempSync(join(tmpdir(), "nitpick-e2e-"));
+const temp = mkdtempSync(join(tmpdir(), "holt-e2e-"));
 const appDir = join(temp, "app");
 const outDir = join(temp, "out");
 let vite;
@@ -267,7 +267,7 @@ try {
   vite = await startVite(appDir, port);
   const origin = vite.origin;
   const pageUrl = `${origin}/`;
-  log(`Vite + nitpick plugin at ${origin}, writing to ${outDir}`);
+  log(`Vite + holt plugin at ${origin}, writing to ${outDir}`);
 
   // ---- browser ----------------------------------------------------------------
   // A desktop-sized window: the side panel takes ~1/3 of it once open.
@@ -279,11 +279,11 @@ try {
   log(`extension ${worker.extensionId} loaded (${worker.method})`);
 
   // Watch the network from the worker and (later) the panel: which requests
-  // were made to /__nitpick, any CORS preflight, any blocked request.
+  // were made to /__holt, any CORS preflight, any blocked request.
   const requests = new Map(); // requestId -> { method, url, status, failed, blocked, from }
   cdp.on((msg) => {
     const p = msg.params;
-    if (msg.method === "Network.requestWillBeSent" && p.request.url.includes("/__nitpick")) {
+    if (msg.method === "Network.requestWillBeSent" && p.request.url.includes("/__holt")) {
       requests.set(p.requestId, { method: p.request.method, url: p.request.url, from: msg.sessionId });
     } else if (msg.method === "Network.responseReceived" && requests.has(p.requestId)) {
       requests.get(p.requestId).status = p.response.status;
@@ -322,7 +322,7 @@ try {
   const serverLine = await waitFor(
     async () => {
       const text = await evaluate(cdp, panel, "document.querySelector('.server-line')?.innerText ?? ''");
-      return /nitpick .*· /.test(text) ? text : null;
+      return /holt .*· /.test(text) ? text : null;
     },
     { timeoutMs: 15_000, what: "the side panel to report the server as reachable" },
   );
@@ -387,7 +387,7 @@ try {
   // ---- 3. area screenshot: real overlay, synthetic drag ------------------------
   viewports["Screenshot (area)"] = await pageViewport();
   await clickPanelButton("Area");
-  await waitFor(() => evaluate(cdp, page, "!!document.querySelector('nitpick-area-select')"), { what: "the area-select overlay" });
+  await waitFor(() => evaluate(cdp, page, "!!document.querySelector('holt-area-select')"), { what: "the area-select overlay" });
   // 200 x 150 CSS px, kept inside the viewport (the overlay clamps to it).
   const viewportWidth = await evaluate(cdp, page, "innerWidth");
   require_(viewportWidth >= 260, `page viewport is only ${viewportWidth}px wide`);
@@ -414,7 +414,7 @@ try {
   const ev = (expr) => evaluate(cdp, worker.sessionId, expr);
   const badge = () => ev("Promise.all([chrome.action.getBadgeText({}), chrome.action.getTitle({})]).then(([text, title]) => ({ text, title }))");
   const pageTab = `chrome.tabs.query({}).then(ts => ts.find(t => t.url === ${JSON.stringify(pageUrl)}))`;
-  const command = (name) => ev(`${pageTab}.then(t => { nitpickTest.handleCommand(${JSON.stringify(name)}, t); return true; })`);
+  const command = (name) => ev(`${pageTab}.then(t => { holtTest.handleCommand(${JSON.stringify(name)}, t); return true; })`);
   const offscreenOpen = async () => (await cdp.send("Target.getTargets")).targetInfos.some((t) => t.url.endsWith("/offscreen.html"));
   const watchOffscreen = async () => {
     const target = (await cdp.send("Target.getTargets")).targetInfos.find((t) => t.url.endsWith("/offscreen.html"));
@@ -526,7 +526,7 @@ try {
     if (!b) throw new Error('no button ' + ${JSON.stringify(label)});
     b.click();
   })()`);
-  const commandB = (name) => evB(`chrome.tabs.query({}).then(ts => ts.find(t => t.url === ${JSON.stringify(pageUrl)})).then(t => { nitpickTest.handleCommand(${JSON.stringify(name)}, t); return true; })`);
+  const commandB = (name) => evB(`chrome.tabs.query({}).then(ts => ts.find(t => t.url === ${JSON.stringify(pageUrl)})).then(t => { holtTest.handleCommand(${JSON.stringify(name)}, t); return true; })`);
   const offscreenB = async () => {
     const target = (await cdpB.send("Target.getTargets")).targetInfos.find((t) => t.url.endsWith("/offscreen.html"));
     if (target) {
@@ -536,7 +536,7 @@ try {
     }
   };
   const offscreenSessionsB = [];
-  await waitFor(async () => /nitpick .*· /.test(await evaluate(cdpB, panelB, "document.querySelector('.server-line')?.innerText ?? ''")), { what: "panel B to connect" });
+  await waitFor(async () => /holt .*· /.test(await evaluate(cdpB, panelB, "document.querySelector('.server-line')?.innerText ?? ''")), { what: "panel B to connect" });
 
   // 8a. from the panel button
   await clickB("🎙 Voice note");
@@ -596,7 +596,7 @@ try {
   const workerFetch = await evaluate(
     cdp,
     worker.sessionId,
-    `fetch(${JSON.stringify(origin + "/__nitpick/status")}, { headers: { "x-nitpick-client": "extension" } })
+    `fetch(${JSON.stringify(origin + "/__holt/status")}, { headers: { "x-holt-client": "extension" } })
        .then(async r => ({ status: r.status, body: await r.json() }), e => ({ error: String(e) }))`,
   );
   check(workerFetch.status === 200 && workerFetch.body?.ok === true, `worker fetch of /status failed: ${JSON.stringify(workerFetch)}`);
@@ -610,23 +610,23 @@ try {
   }
   const fromWorker = seen.filter((r) => r.from === worker.sessionId && r.method === "POST");
   check(fromWorker.length >= 6 && fromWorker.every((r) => r.status === 200), `worker uploads did not all succeed: ${JSON.stringify(fromWorker)}`);
-  log(`network: ${seen.length} requests to /__nitpick seen (${fromWorker.length} POSTs from the worker, all ${[...new Set(fromWorker.map((r) => r.status))].join("/")}); ` +
+  log(`network: ${seen.length} requests to /__holt seen (${fromWorker.length} POSTs from the worker, all ${[...new Set(fromWorker.map((r) => r.status))].join("/")}); ` +
     `CORS preflights sent by Chrome: ${preflights.length}; blocked: ${blocked.length}`);
 
   // The server's own preflight answer for this extension's origin (what Chrome
   // would send if it did preflight, e.g. without host permissions).
-  const preflight = await fetch(`${origin}/__nitpick/media`, {
+  const preflight = await fetch(`${origin}/__holt/media`, {
     method: "OPTIONS",
     headers: {
       origin: `chrome-extension://${worker.extensionId}`,
       "access-control-request-method": "POST",
-      "access-control-request-headers": "content-type,x-nitpick-client,x-nitpick-kind",
+      "access-control-request-headers": "content-type,x-holt-client,x-holt-kind",
     },
   });
   const acao = preflight.headers.get("access-control-allow-origin");
   const acah = (preflight.headers.get("access-control-allow-headers") ?? "").toLowerCase();
   check(preflight.ok && acao === `chrome-extension://${worker.extensionId}`, `server preflight answer: ${preflight.status}, allow-origin=${acao}`);
-  check(["x-nitpick-client", "x-nitpick-kind", "content-type"].every((h) => acah.includes(h) || acah === "*"), `server preflight allow-headers missing ours: ${acah}`);
+  check(["x-holt-client", "x-holt-kind", "content-type"].every((h) => acah.includes(h) || acah === "*"), `server preflight allow-headers missing ours: ${acah}`);
   log(`server preflight for chrome-extension origin: ${preflight.status}, allow-origin=${acao}, allow-headers=${acah}`);
 
   // ---- on disk ----------------------------------------------------------------

@@ -46,9 +46,9 @@ export function openNotePopup(tab: chrome.tabs.Tab | undefined): void {
   // Promise.all attaches a handler to all three right now, so an early
   // rejection of `opened` is never reported as unhandled.
   Promise.all([stored, set, opened]).catch(async (error: unknown) => {
-    console.info("[nitpick] openPopup failed, opening a note window instead:", String((error as Error)?.message ?? error));
+    console.info("[holt] openPopup failed, opening a note window instead:", String((error as Error)?.message ?? error));
     await chrome.action.setPopup({ popup: "" }).catch(() => undefined);
-    await openNoteWindow(tab?.windowId).catch((e: unknown) => console.warn("[nitpick] could not open the note window", e));
+    await openNoteWindow(tab?.windowId).catch((e: unknown) => console.warn("[holt] could not open the note window", e));
   });
 }
 

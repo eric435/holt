@@ -9,7 +9,7 @@
  * reports back.
  */
 
-import type { Entry, PageContext, ScreenshotMode } from "@nitpick/protocol";
+import type { Entry, PageContext, ScreenshotMode } from "@holt/protocol";
 import { ApiError, getApi } from "../shared/api.js";
 import { errorMessage, isTopFrameOfTab, type AreaSelectedMessage, type CaptureResponse } from "../shared/messages.js";
 import { pageContextFromTab } from "../shared/page-context.js";

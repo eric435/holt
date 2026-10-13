@@ -24,7 +24,7 @@ import path from "node:path";
 export interface OutputGuardOptions {
   /** Absolute Vite root. */
   root: string;
-  /** Absolute nitpick output directory. */
+  /** Absolute holt output directory. */
   outputDir: string;
   /** Absolute Vite publicDir, or empty/false if disabled. */
   publicDir?: string | false;

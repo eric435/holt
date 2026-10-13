@@ -7,7 +7,7 @@
  * is a normal page that lives as long as it is open.
  */
 
-import type { SessionInfo, StatusResponse } from "@nitpick/protocol";
+import type { SessionInfo, StatusResponse } from "@holt/protocol";
 import { DEFAULT_SETTINGS, type Settings } from "../shared/settings.js";
 import type { ShortcutMap } from "../shared/shortcuts.js";
 import type { RecordingState } from "../shared/state.js";

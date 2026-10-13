@@ -1,8 +1,8 @@
 /**
- * @nitpick/protocol
+ * @holt/protocol
  *
  * The single source of truth for how the Chrome extension talks to the
- * local nitpick server. Both sides import from here, so a change to the
+ * local holt server. Both sides import from here, so a change to the
  * wire format is a compile error on whichever side forgot to update.
  *
  * Design rules for this package:

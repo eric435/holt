@@ -2,26 +2,26 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createNitpick } from "./core.js";
+import { createHolt } from "./core.js";
 
 let dir: string;
 beforeEach(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), "nitpick-core-"));
+  dir = await mkdtemp(path.join(tmpdir(), "holt-core-"));
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe("createNitpick startup logging", () => {
+describe("createHolt startup logging", () => {
   it("logs nothing about access with the defaults", async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    await createNitpick({ cwd: dir, logger });
+    await createHolt({ cwd: dir, logger });
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("warns about every allowed origin, every allowed extension ID, and a non-default host", async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    await createNitpick({
+    await createHolt({
       cwd: dir,
       logger,
       overrides: {
@@ -40,18 +40,18 @@ describe("createNitpick startup logging", () => {
   });
 });
 
-describe("createNitpick project identity", () => {
+describe("createHolt project identity", () => {
   it("resolves the project from <cwd>/package.json once, at startup", async () => {
     await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "@acme/web" }));
-    const nitpick = await createNitpick({ cwd: dir, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } });
-    expect(nitpick.config.project).toEqual({ name: "@acme/web", source: "package.json" });
+    const holt = await createHolt({ cwd: dir, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } });
+    expect(holt.config.project).toEqual({ name: "@acme/web", source: "package.json" });
   });
 
   it("starts with the directory name and one warning when package.json is broken", async () => {
     await writeFile(path.join(dir, "package.json"), "{");
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const nitpick = await createNitpick({ cwd: dir, logger });
-    expect(nitpick.config.project).toEqual({ name: path.basename(dir), source: "directory" });
+    const holt = await createHolt({ cwd: dir, logger });
+    expect(holt.config.project).toEqual({ name: path.basename(dir), source: "directory" });
     expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(String(logger.warn.mock.calls[0]?.[0])).toMatch(/package\.json is not valid JSON/);
   });

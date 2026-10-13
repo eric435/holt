@@ -14,7 +14,7 @@
  *  - setting changes made elsewhere (storage.onChanged).
  */
 
-import type { Entry } from "@nitpick/protocol";
+import type { Entry } from "@holt/protocol";
 import {
   isEntryAddedMessage,
   isRecorderTranscriptMessage,
@@ -110,6 +110,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error("[nitpick] side panel failed to start", error);
+  console.error("[holt] side panel failed to start", error);
   toast("error", `The panel failed to start: ${String(error)}`);
 });

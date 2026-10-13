@@ -35,7 +35,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { SESSION_FILE_NAME, type Entry, type EntryInput, type SessionInfo } from "@nitpick/protocol";
+import { SESSION_FILE_NAME, type Entry, type EntryInput, type SessionInfo } from "@holt/protocol";
 import { MAX_PENDING_UPLOADS } from "../config/defaults.js";
 import { renderEntry, renderFooter, renderHeader } from "./markdown.js";
 import { isPlainFileName, mediaFileName, sessionFolderName, type MediaKind } from "./naming.js";
@@ -95,11 +95,11 @@ export interface ReservedMedia {
 }
 
 /**
- * Written into the output directory when nitpick creates it. Screenshots can
+ * Written into the output directory when holt creates it. Screenshots can
  * contain anything that was on screen, so sessions are not committed unless
  * you decide to (docs/SECURITY.md).
  */
-const OUTPUT_GITIGNORE = `# Created by nitpick. QA sessions can contain screenshots of anything that
+const OUTPUT_GITIGNORE = `# Created by holt. QA sessions can contain screenshots of anything that
 # was on your screen, so they are ignored by default. Delete or edit this
 # file if you want to commit sessions.
 *

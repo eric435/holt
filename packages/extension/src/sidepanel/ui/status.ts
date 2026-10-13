@@ -2,7 +2,7 @@
  * Server + session status.
  *
  * The first line names the project the server writes into (from /status,
- * newer servers only) prominently, then "nitpick <version> · <host:port>"
+ * newer servers only) prominently, then "holt <version> · <host:port>"
  * muted. The project name is also published to storage.session
  * (`serverInfo`) so the worker can put it in the toolbar tooltip.
  *

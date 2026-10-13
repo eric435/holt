@@ -1,8 +1,8 @@
 {
-  "name": "@nitpick/protocol",
+  "name": "@holt/protocol",
   "version": "0.1.0",
   "private": true,
-  "description": "Shared types and constants for the nitpick extension <-> server protocol. Consumed as TypeScript source by the other workspace packages (no build step).",
+  "description": "Shared types and constants for the holt extension <-> server protocol. Consumed as TypeScript source by the other workspace packages (no build step).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

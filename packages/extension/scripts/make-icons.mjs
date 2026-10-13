@@ -4,11 +4,11 @@
  *
  * Chrome wants PNG icons at 16/32/48/128 px. Rather than check in binary
  * files from an image editor, we draw them here: a rounded square with a
- * white lowercase "n", anti-aliased by 4x4 supersampling, then encode a PNG
+ * white lowercase "h", anti-aliased by 4x4 supersampling, then encode a PNG
  * by hand (signature + IHDR + IDAT (zlib) + IEND, each chunk with a CRC32).
  *
  * Output goes to public/icons and is committed, so a normal build does not
- * need to run this. Re-run with `pnpm --filter @nitpick/extension icons`.
+ * need to run this. Re-run with `pnpm --filter @holt/extension icons`.
  */
 
 import { deflateSync } from "node:zlib";
@@ -33,15 +33,18 @@ function roundedSquareDistance(x, y) {
   return outside + Math.min(Math.max(qx, qy), 0) - CORNER;
 }
 
-// The "n": left stem, an arch (upper half circle), right stem.
+// The "h": a tall left stem (the ascender), an arch (upper half circle) that
+// leaves it at x-height, and a short right stem. It is an "n" whose left stem
+// keeps going up. The glyph runs from ASCENDER - STROKE to BASELINE + STROKE,
+// which is centred vertically in the square.
 const STROKE = 0.085; // half the stroke width
 const ARCH_R = 0.16;
 const ARCH_CX = 0.5;
-const ARCH_CY = 0.45;
-const BASELINE = 0.74;
+const ARCH_CY = 0.52;
+const ASCENDER = 0.22; // top of the left stem
+const BASELINE = 0.78;
 const X_LEFT = ARCH_CX - ARCH_R;
 const X_RIGHT = ARCH_CX + ARCH_R;
-const TOP = ARCH_CY - ARCH_R - 0.02;
 
 function segmentDistance(px, py, ax, ay, bx, by) {
   const dx = bx - ax;
@@ -51,7 +54,7 @@ function segmentDistance(px, py, ax, ay, bx, by) {
 }
 
 function letterDistance(x, y) {
-  const leftStem = segmentDistance(x, y, X_LEFT, TOP, X_LEFT, BASELINE);
+  const leftStem = segmentDistance(x, y, X_LEFT, ASCENDER, X_LEFT, BASELINE);
   const rightStem = segmentDistance(x, y, X_RIGHT, ARCH_CY, X_RIGHT, BASELINE);
   // Upper half of the arch circle only.
   const arch = y <= ARCH_CY ? Math.abs(Math.hypot(x - ARCH_CX, y - ARCH_CY) - ARCH_R) : Infinity;

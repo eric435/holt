@@ -1,7 +1,7 @@
 /**
  * Typed message bus between the extension's execution contexts.
  *
- * nitpick runs code in five places that cannot share memory:
+ * holt runs code in five places that cannot share memory:
  *
  *   service worker (background)  <-- chrome.runtime.sendMessage --  side panel, note popup
  *   service worker (background)  <-- chrome.runtime.sendMessage --  content scripts
@@ -39,7 +39,7 @@
  * calling `sendResponse`, so the context that does handle it can answer.
  */
 
-import type { Entry, PageContext, ScreenshotMode, SessionInfo } from "@nitpick/protocol";
+import type { Entry, PageContext, ScreenshotMode, SessionInfo } from "@holt/protocol";
 
 // ---------------------------------------------------------------------------
 // Shapes

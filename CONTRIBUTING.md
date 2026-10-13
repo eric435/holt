@@ -16,8 +16,8 @@ Node 20+ and pnpm 10 (`corepack enable` picks the version from package.json).
 Two terminals:
 
 ```bash
-pnpm --filter @nitpick/extension dev     # rebuilds dist/ on change
-pnpm --filter @nitpick/example-vite-app dev
+pnpm --filter @holt/extension dev     # rebuilds dist/ on change
+pnpm --filter @holt/example-vite-app dev
 ```
 
 Load `packages/extension/dist` once as an unpacked extension
@@ -25,7 +25,7 @@ Load `packages/extension/dist` once as an unpacked extension
 the reload icon on the extension card; the side panel reloads with it.
 
 Set the side panel's server URL to the Vite origin printed by the example
-app (the plugin mounts the API on the same port), or run `npx nitpick` in
+app (the plugin mounts the API on the same port), or run `npx holt` in
 any project to use the standalone server on port 4848.
 
 ## Checks that run in CI
@@ -34,7 +34,7 @@ any project to use the standalone server on port 4848.
 - `npm pack --dry-run` in `packages/server`, so the published file list is
   visible on every PR. The package must keep **zero runtime dependencies**;
   if you believe one is needed, say why in the PR.
-- `pnpm --filter @nitpick/extension smoke` loads the built extension in a
+- `pnpm --filter @holt/extension smoke` loads the built extension in a
   real headless Chrome and fails on any startup error.
 
 ## Where things go

@@ -13,7 +13,7 @@
  *                                                                  which runs classic scripts only)
  *   manifest.json (version from package.json), HTML, CSS, public/icons -> dist/
  *
- * `@nitpick/protocol` is TypeScript source in the workspace; esbuild follows
+ * `@holt/protocol` is TypeScript source in the workspace; esbuild follows
  * the import and bundles it like our own code.
  *
  * Usage: node scripts/build.mjs [--watch]
@@ -39,7 +39,7 @@ const common = {
   target: "chrome127", // keep in sync with manifest.json minimum_chrome_version
   platform: "browser",
   logLevel: "info",
-  define: { __NITPICK_VERSION__: JSON.stringify(pkg.version) },
+  define: { __HOLT_VERSION__: JSON.stringify(pkg.version) },
   absWorkingDir: root,
 };
 
@@ -109,8 +109,8 @@ if (watch) {
   for (const file of [...STATIC_FILES.map(([from]) => from), "manifest.json", "public/icons"]) {
     fsWatch(join(root, file), { recursive: true }, () => copyStatic().catch((e) => console.error(e)));
   }
-  console.log("[nitpick] watching. After changes, click the reload icon on chrome://extensions (the side panel reloads with it).");
+  console.log("[holt] watching. After changes, click the reload icon on chrome://extensions (the side panel reloads with it).");
 } else {
   await Promise.all([esbuild.build(moduleBuild), esbuild.build(contentBuild)]);
-  console.log(`[nitpick] built ${pkg.name}@${pkg.version} into ${dist}`);
+  console.log(`[holt] built ${pkg.name}@${pkg.version} into ${dist}`);
 }

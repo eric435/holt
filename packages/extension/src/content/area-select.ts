@@ -20,7 +20,7 @@ import type { AreaCancelledMessage, AreaSelectedMessage, CssRect } from "../shar
 
 declare global {
   interface Window {
-    __nitpickAreaSelect?: true;
+    __holtAreaSelect?: true;
   }
 }
 
@@ -51,13 +51,13 @@ const STYLE = `
   }
 `;
 
-if (!window.__nitpickAreaSelect) {
-  window.__nitpickAreaSelect = true;
+if (!window.__holtAreaSelect) {
+  window.__holtAreaSelect = true;
   showOverlay();
 }
 
 function showOverlay(): void {
-  const host = document.createElement("nitpick-area-select");
+  const host = document.createElement("holt-area-select");
   host.style.cssText = "all: initial; position: fixed; inset: 0; z-index: 2147483647;";
   const shadow = host.attachShadow({ mode: "closed" });
 
@@ -140,7 +140,7 @@ function showOverlay(): void {
     window.removeEventListener("keydown", onKeyDown, true);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     host.remove();
-    delete window.__nitpickAreaSelect;
+    delete window.__holtAreaSelect;
   }
 
   function cancel(): void {

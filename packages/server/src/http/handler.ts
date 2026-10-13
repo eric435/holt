@@ -10,17 +10,17 @@
  * It never throws; every failure becomes a JSON error response.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { BASE_PATH } from "@nitpick/protocol";
+import { BASE_PATH } from "@holt/protocol";
 import { applyCorsHeaders, checkClientHeaders, checkOriginAndHost, sendPreflight } from "./cors.js";
 import { HttpError, sendError, sendJson } from "./errors.js";
 import { routes, type RouteContext } from "./routes.js";
 
-export type NitpickHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
+export type HoltHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 export type HandlerContext = RouteContext;
 
-export function createHandler(ctx: HandlerContext): NitpickHandler {
+export function createHandler(ctx: HandlerContext): HoltHandler {
   return async (req, res) => {
-    const subPath = nitpickSubPath(req.url);
+    const subPath = holtSubPath(req.url);
     if (subPath === null) return false;
 
     try {
@@ -46,14 +46,14 @@ export function createHandler(ctx: HandlerContext): NitpickHandler {
 }
 
 /**
- * "/__nitpick/status?x=1" -> "/status"; anything outside BASE_PATH -> null.
- * Parsing with URL also normalizes dot segments, so "/__nitpick/../app" is
+ * "/__holt/status?x=1" -> "/status"; anything outside BASE_PATH -> null.
+ * Parsing with URL also normalizes dot segments, so "/__holt/../app" is
  * correctly treated as "/app" (not ours).
  */
-function nitpickSubPath(rawUrl: string | undefined): string | null {
+function holtSubPath(rawUrl: string | undefined): string | null {
   let pathname: string;
   try {
-    pathname = new URL(rawUrl ?? "/", "http://nitpick.invalid").pathname;
+    pathname = new URL(rawUrl ?? "/", "http://holt.invalid").pathname;
   } catch {
     return null;
   }

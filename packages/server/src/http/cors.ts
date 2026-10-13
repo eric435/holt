@@ -25,21 +25,21 @@
  *    Page-initiated requests are told apart by their `Sec-Fetch-*` headers,
  *    which browsers attach to every request and pages cannot remove. That
  *    matters in Vite mode: a script on the app under test is same-origin
- *    with /__nitpick, and browsers omit Origin on same-origin GETs, so
+ *    with /__holt, and browsers omit Origin on same-origin GETs, so
  *    without this check it could read /status.
  *
  * 3. OPTIONS preflights are answered here, only for allowed origins.
  *
- * 4. Every non-preflight request must carry `x-nitpick-client: extension`.
+ * 4. Every non-preflight request must carry `x-holt-client: extension`.
  *    A custom header can't be sent cross-origin without a preflight, and
  *    the preflight fails for non-allowed origins (step 2), so a page cannot
  *    use a "simple" (unpreflighted) request to sneak a write through.
  *
- * 5. If a token is configured, `x-nitpick-token` must match it.
+ * 5. If a token is configured, `x-holt-token` must match it.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { CLIENT_HEADER, CLIENT_HEADER_VALUE, KIND_HEADER, TOKEN_HEADER } from "@nitpick/protocol";
+import { CLIENT_HEADER, CLIENT_HEADER_VALUE, KIND_HEADER, TOKEN_HEADER } from "@holt/protocol";
 import type { ResolvedConfig } from "../config/types.js";
 import { EXTENSION_ID } from "../config/validate.js";
 import { HttpError } from "./errors.js";
@@ -126,7 +126,7 @@ export function checkOriginAndHost(req: IncomingMessage, config: ResolvedConfig)
   const origin = req.headers.origin;
   if (origin === undefined) {
     if (hasFetchMetadata(req)) {
-      throw new HttpError(403, "forbidden", "Browser requests must come from the nitpick extension");
+      throw new HttpError(403, "forbidden", "Browser requests must come from the holt extension");
     }
     if (local) return { origin: null };
     throw new HttpError(403, "forbidden", "Requests without an Origin header are only accepted from this machine");
@@ -141,7 +141,7 @@ export function checkOriginAndHost(req: IncomingMessage, config: ResolvedConfig)
  * True if the request carries `Sec-Fetch-*` headers saying it came from a
  * web page. `Sec-Fetch-Site: none` is the exception: Chrome uses it only
  * for requests no page initiated, i.e. the user typing a URL (which cannot
- * add our custom header) or a privileged context. That includes the nitpick
+ * add our custom header) or a privileged context. That includes the holt
  * extension itself: Chrome omits Origin on an extension's GET to a host it
  * has permission for and sends `Sec-Fetch-Site: none` instead. Pages
  * cannot set or change Sec-Fetch-* headers.

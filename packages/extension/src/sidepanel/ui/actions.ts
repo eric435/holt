@@ -16,7 +16,7 @@
  *    is closed, and the button says so.
  */
 
-import type { Entry, PageContext, ScreenshotMode } from "@nitpick/protocol";
+import type { Entry, PageContext, ScreenshotMode } from "@holt/protocol";
 import { errorMessage, sendMessage, type RecorderKind } from "../../shared/messages.js";
 import { withShortcut, type CommandName } from "../../shared/shortcuts.js";
 import { clearState, getState as getStoredState, setState } from "../../shared/state.js";

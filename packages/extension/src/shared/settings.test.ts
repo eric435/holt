@@ -11,8 +11,8 @@ describe("validateServerUrl", () => {
     expect(validateServerUrl("HTTP://LocalHost:5173")).toEqual({ ok: true, url: "http://localhost:5173" });
   });
 
-  it("tolerates a pasted /__nitpick base path", () => {
-    expect(validateServerUrl("http://localhost:5173/__nitpick/")).toEqual({ ok: true, url: "http://localhost:5173" });
+  it("tolerates a pasted /__holt base path", () => {
+    expect(validateServerUrl("http://localhost:5173/__holt/")).toEqual({ ok: true, url: "http://localhost:5173" });
   });
 
   it("accepts https and IPv6 loopback without a warning", () => {

@@ -1,7 +1,7 @@
 {
-  "name": "nitpick-notes",
+  "name": "holt",
   "version": "0.1.0",
-  "description": "Local server for the nitpick Chrome extension: writes screenshots, recordings and QA notes straight into your repo as markdown. CLI + Vite plugin, zero dependencies.",
+  "description": "Local server for the holt Chrome extension: writes screenshots, recordings and QA notes straight into your repo as markdown. CLI + Vite plugin, zero dependencies.",
   "license": "MIT",
   "keywords": [
     "qa",
@@ -14,12 +14,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/nitpick.git",
+    "url": "git+https://github.com/eric435/holt.git",
     "directory": "packages/server"
   },
-  "homepage": "https://github.com/OWNER/nitpick#readme",
+  "homepage": "https://github.com/eric435/holt#readme",
   "bugs": {
-    "url": "https://github.com/OWNER/nitpick/issues"
+    "url": "https://github.com/eric435/holt/issues"
   },
   "type": "module",
   "sideEffects": false,
@@ -27,8 +27,7 @@
     "node": ">=20"
   },
   "bin": {
-    "nitpick": "./dist/cli.js",
-    "nitpick-notes": "./dist/cli.js"
+    "holt": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -66,7 +65,7 @@
     }
   },
   "devDependencies": {
-    "@nitpick/protocol": "workspace:*",
+    "@holt/protocol": "workspace:*",
     "vite": "^5.4.21"
   },
   "publishConfig": {

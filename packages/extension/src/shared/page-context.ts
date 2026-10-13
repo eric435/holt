@@ -8,7 +8,7 @@
  * servers). Otherwise both are undefined and we fall back to placeholders.
  */
 
-import type { PageContext } from "@nitpick/protocol";
+import type { PageContext } from "@holt/protocol";
 
 export const UNKNOWN_PAGE_TITLE = "Unknown page";
 

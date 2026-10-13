@@ -1,16 +1,16 @@
 {
-  "name": "@nitpick/example-vite-app",
+  "name": "@holt/example-vite-app",
   "private": true,
   "version": "0.0.0",
-  "description": "A small Vite app to try nitpick against: a long page with a fixed header (for full-page captures) and a checkout form.",
+  "description": "A small Vite app to try holt against: a long page with a fixed header (for full-page captures) and a checkout form.",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter nitpick-notes run build && vite",
+    "dev": "pnpm --filter holt run build && vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
-    "nitpick-notes": "workspace:*",
+    "holt": "workspace:*",
     "vite": "^5.4.21"
   }
 }

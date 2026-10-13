@@ -31,7 +31,7 @@ import { findPinned, hideInline } from "./pinned.js";
 
 declare global {
   interface Window {
-    __nitpickPageHelper?: true;
+    __holtPageHelper?: true;
   }
 }
 
@@ -43,8 +43,8 @@ const WIDTH_WAIT_MAX_MS = 1_000;
 /** Restore the page by ourselves if the worker goes quiet for this long. */
 const WATCHDOG_MS = 15_000;
 
-if (!window.__nitpickPageHelper) {
-  window.__nitpickPageHelper = true;
+if (!window.__holtPageHelper) {
+  window.__holtPageHelper = true;
   install();
 }
 

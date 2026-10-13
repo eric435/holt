@@ -8,7 +8,7 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 export default defineConfig({
   // Mirror the tsup `define` so src/version.ts behaves the same under test.
   define: {
-    __NITPICK_VERSION__: JSON.stringify(pkg.version),
+    __HOLT_VERSION__: JSON.stringify(pkg.version),
   },
   test: {
     environment: "node",

@@ -107,7 +107,7 @@ describe("describeProject", () => {
 describe("readPackageJson", () => {
   let dir: string;
   beforeEach(async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "nitpick-project-"));
+    dir = await mkdtemp(path.join(tmpdir(), "holt-project-"));
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });

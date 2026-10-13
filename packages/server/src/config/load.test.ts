@@ -1,20 +1,20 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DEFAULT_MAX_UPLOAD_BYTES, DEFAULT_PORT } from "@nitpick/protocol";
+import { DEFAULT_MAX_UPLOAD_BYTES, DEFAULT_PORT } from "@holt/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "./load.js";
 import { ConfigError } from "./validate.js";
 
 let dir: string;
 beforeEach(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), "nitpick-config-"));
+  dir = await mkdtemp(path.join(tmpdir(), "holt-config-"));
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const writeConfig = (content: unknown, name = "nitpick.config.json") =>
+const writeConfig = (content: unknown, name = "holt.config.json") =>
   writeFile(path.join(dir, name), typeof content === "string" ? content : JSON.stringify(content));
 
 describe("loadConfig", () => {
@@ -36,14 +36,14 @@ describe("loadConfig", () => {
     });
   });
 
-  it("reads nitpick.config.json and resolves outputDir against the root", async () => {
+  it("reads holt.config.json and resolves outputDir against the root", async () => {
     await writeConfig({ outputDir: "docs/qa", port: 5000, token: "t" });
     const { config } = await loadConfig(dir);
     expect(config.outputDir).toBe(path.join(dir, "docs/qa"));
     expect(config.port).toBe(5000);
     expect(config.token).toBe("t");
     expect(config.host).toBe("127.0.0.1"); // default kept
-    expect(config.configFile).toBe(path.join(dir, "nitpick.config.json"));
+    expect(config.configFile).toBe(path.join(dir, "holt.config.json"));
   });
 
   it("lets overrides (CLI flags) win over the file, which wins over defaults", async () => {
@@ -129,13 +129,13 @@ describe("loadConfig", () => {
   it("fails on invalid JSON with the file name", async () => {
     await writeConfig("{ port: 1 }");
     await expect(loadConfig(dir)).rejects.toThrow(ConfigError);
-    await expect(loadConfig(dir)).rejects.toThrow(/nitpick\.config\.json is not valid JSON/);
+    await expect(loadConfig(dir)).rejects.toThrow(/holt\.config\.json is not valid JSON/);
   });
 
   it("fails on invalid values in the file or in overrides", async () => {
     await writeConfig({ port: "nope" });
     await expect(loadConfig(dir)).rejects.toThrow(/"port" must be an integer/);
-    await rm(path.join(dir, "nitpick.config.json"));
+    await rm(path.join(dir, "holt.config.json"));
     await expect(loadConfig(dir, { port: -1 }, { overridesSource: "command line flags" })).rejects.toThrow(
       /Invalid config in command line flags/,
     );

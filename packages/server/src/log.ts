@@ -1,5 +1,5 @@
 /**
- * A tiny logger: three levels, a `[nitpick]` prefix, nothing else.
+ * A tiny logger: three levels, a `[holt]` prefix, nothing else.
  *
  * It is an interface rather than direct `console` calls so that:
  *  - the Vite adapter can route messages through Vite's own logger (keeps
@@ -15,7 +15,7 @@ export interface Logger {
   error(message: string): void;
 }
 
-export const LOG_PREFIX = "[nitpick]";
+export const LOG_PREFIX = "[holt]";
 
 /** Logs to the given console-like sink (default: the real console). */
 export function createConsoleLogger(sink: Pick<Console, "log" | "warn" | "error"> = console): Logger {

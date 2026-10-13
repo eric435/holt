@@ -20,12 +20,12 @@
  * unit-tested.
  */
 
-import { BASE_PATH, DEFAULT_HOST, DEFAULT_PORT } from "@nitpick/protocol";
+import { BASE_PATH, DEFAULT_HOST, DEFAULT_PORT } from "@holt/protocol";
 
 export const DEFAULT_SERVER_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 
 export interface Settings {
-  /** Origin of the nitpick server (standalone CLI or the Vite dev server). */
+  /** Origin of the holt server (standalone CLI or the Vite dev server). */
   serverUrl: string;
   /** Shared secret; empty string means "no token". */
   token: string;
@@ -84,7 +84,7 @@ export function isLoopbackHost(hostname: string): boolean {
  *
  * Accepted: an http(s) origin such as `http://127.0.0.1:4848` or
  * `http://localhost:5173` (Vite plugin mode). A trailing slash or a trailing
- * `/__nitpick` is tolerated and stripped, since people will paste either.
+ * `/__holt` is tolerated and stripped, since people will paste either.
  * The result is always a bare origin; api.ts appends BASE_PATH.
  */
 export function validateServerUrl(raw: string): ServerUrlValidation {
@@ -120,7 +120,7 @@ export function validateServerUrl(raw: string): ServerUrlValidation {
     ok: true,
     url: url.origin,
     warning:
-      `${url.hostname} is not a loopback address. nitpick is meant to run on your machine only; ` +
+      `${url.hostname} is not a loopback address. holt is meant to run on your machine only; ` +
       "the extension's network permission covers 127.0.0.1 and localhost, so other hosts only work if " +
       "the server allows this extension's origin via CORS.",
   };
@@ -201,7 +201,7 @@ export function migrateFromSync(): Promise<void> {
       if (Object.keys(plan.toLocal).length) await chrome.storage.local.set(plan.toLocal);
       if (plan.removeFromSync.length) await chrome.storage.sync.remove(plan.removeFromSync);
     } catch (error) {
-      console.warn("[nitpick] settings migration from storage.sync failed", error);
+      console.warn("[holt] settings migration from storage.sync failed", error);
     }
   })();
   return migration;
@@ -227,7 +227,7 @@ export async function restrictStorageAccess(): Promise<void> {
       try {
         await area.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
       } catch (error) {
-        console.warn(`[nitpick] could not restrict chrome.storage.${name} to trusted contexts`, error);
+        console.warn(`[holt] could not restrict chrome.storage.${name} to trusted contexts`, error);
       }
     }),
   );

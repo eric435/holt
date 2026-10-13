@@ -8,7 +8,7 @@
  * are uploaded by the offscreen document instead.
  */
 
-import type { Entry, EntryInput, EntryKind } from "@nitpick/protocol";
+import type { Entry, EntryInput, EntryKind } from "@holt/protocol";
 import { getApi } from "../shared/api.js";
 import { addRecentEntry } from "../shared/state.js";
 import { update } from "./store.js";

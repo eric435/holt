@@ -32,7 +32,7 @@
  *   recorder:transcript (for the panel's live transcript)
  */
 
-import type { EntryInput, EntryKind, PageContext } from "@nitpick/protocol";
+import type { EntryInput, EntryKind, PageContext } from "@holt/protocol";
 import { getApi } from "../shared/api.js";
 import {
   errorMessage,
@@ -103,7 +103,7 @@ async function startTab(request: OffscreenStartTabRequest): Promise<OffscreenSta
   if (active.tab) return { ok: false, error: "A tab recording is already running." };
   try {
     const recording = await startTabRecording(request.streamId, () => void finish("tab"));
-    console.info("[nitpick] tab capture running at", recording.settings.width, "x", recording.settings.height);
+    console.info("[holt] tab capture running at", recording.settings.width, "x", recording.settings.height);
     active.tab = {
       id: request.id,
       page: request.page,
@@ -224,5 +224,5 @@ function toast(level: ToastLevel, message: string, action?: ToastAction): void {
  * here (extension being reloaded) has nobody left to report to.
  */
 function send(message: Message): void {
-  chrome.runtime.sendMessage(message).catch((error: unknown) => console.warn("[nitpick] could not reach the worker", error));
+  chrome.runtime.sendMessage(message).catch((error: unknown) => console.warn("[holt] could not reach the worker", error));
 }

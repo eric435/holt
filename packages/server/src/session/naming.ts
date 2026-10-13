@@ -20,7 +20,7 @@ export function sessionFolderName(date: Date): string {
 
 /**
  * The name segments a media file may use. This is a closed list on purpose:
- * the `x-nitpick-kind` header comes from the client, and only these exact
+ * the `x-holt-kind` header comes from the client, and only these exact
  * strings may end up in a file name.
  */
 export const MEDIA_KINDS = ["screenshot", "recording", "voice-note", "media"] as const;

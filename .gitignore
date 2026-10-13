@@ -148,7 +148,10 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
-# nitpick: captured QA sessions (default output dir) and build output
+# holt: captured QA sessions (default output dir) and build output
 qa/
 dist/
-.nitpick/
+.holt/
+
+# macOS Finder metadata
+.DS_Store

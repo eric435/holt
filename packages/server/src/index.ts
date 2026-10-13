@@ -1,23 +1,23 @@
 /**
- * Public API of `nitpick-notes`.
+ * Public API of `holt`.
  *
- * Most people only use the CLI (`npx nitpick`) or the Vite plugin
- * (`nitpick-notes/vite`). This entry is for mounting nitpick on some other
+ * Most people only use the CLI (`npx holt`) or the Vite plugin
+ * (`holt/vite`). This entry is for mounting holt on some other
  * node:http-based dev server, or for scripting:
  *
- *   import { createNitpick } from "nitpick-notes";
- *   const nitpick = await createNitpick({ cwd: process.cwd() });
+ *   import { createHolt } from "holt";
+ *   const holt = await createHolt({ cwd: process.cwd() });
  *   server.on("request", async (req, res) => {
- *     if (await nitpick.handler(req, res)) return; // handled /__nitpick/*
+ *     if (await holt.handler(req, res)) return; // handled /__holt/*
  *     // ...your own routes
  *   });
  */
-export { createNitpick, type CreateNitpickOptions, type Nitpick } from "./core.js";
+export { createHolt, type CreateHoltOptions, type Holt } from "./core.js";
 export { startStandalone, type StandaloneOptions, type StandaloneServer } from "./adapters/standalone.js";
-export { createHandler, type HandlerContext, type NitpickHandler } from "./http/handler.js";
+export { createHandler, type HandlerContext, type HoltHandler } from "./http/handler.js";
 export { loadConfig, type LoadConfigOptions, type LoadedConfig } from "./config/load.js";
 export { validateConfig, ConfigError } from "./config/validate.js";
-export type { NitpickConfig, ResolvedConfig } from "./config/types.js";
+export type { HoltConfig, ResolvedConfig } from "./config/types.js";
 export { SessionStore, SessionError, type SessionStoreOptions } from "./session/store.js";
 export { createConsoleLogger, silentLogger, type Logger } from "./log.js";
 export { VERSION } from "./version.js";
@@ -32,7 +32,7 @@ export {
   DEFAULT_PORT,
   DEFAULT_HOST,
   ACCEPTED_MEDIA_TYPES,
-} from "@nitpick/protocol";
+} from "@holt/protocol";
 export type {
   Entry,
   EntryInput,
@@ -51,4 +51,4 @@ export type {
   ErrorResponse,
   ErrorCode,
   ApiResponse,
-} from "@nitpick/protocol";
+} from "@holt/protocol";

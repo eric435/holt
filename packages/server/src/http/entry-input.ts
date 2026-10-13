@@ -19,7 +19,7 @@ import type {
   ScreenshotEntry,
   ScreenshotMode,
   VoiceNoteEntry,
-} from "@nitpick/protocol";
+} from "@holt/protocol";
 import { HttpError } from "./errors.js";
 
 type Json = Record<string, unknown>;

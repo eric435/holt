@@ -25,7 +25,7 @@
  * module variables. The offscreen document's messages wake a new instance.
  */
 
-import type { PageContext } from "@nitpick/protocol";
+import type { PageContext } from "@holt/protocol";
 import { errorMessage, type RecorderKind, type RecorderSettings, type RecorderToggleResponse } from "../shared/messages.js";
 import { pageContextFromTab } from "../shared/page-context.js";
 import { loadSettings } from "../shared/settings.js";
@@ -138,7 +138,7 @@ async function voiceStartFailed(error: string, errorName: string | undefined): P
   if (errorName === "NotAllowedError" || errorName === "SecurityError") {
     // The offscreen document can't show a permission prompt (it is never
     // visible). permissions.html, in a normal tab, can.
-    const message = "Microphone access is blocked for nitpick. Allow it once on nitpick's permission page, then try again.";
+    const message = "Microphone access is blocked for holt. Allow it once on holt's permission page, then try again.";
     const shown = await notifyToast("error", message, "open-permissions");
     // Panel closed: nobody can click the toast's button, so open the page
     // directly. The user just asked for a voice note, so this is expected.
@@ -165,7 +165,7 @@ async function stop(recorder: RecorderKind, id: string): Promise<RecorderToggleR
   try {
     wasRunning = (await sendIfOpen({ type: "offscreen:stop", recorder }))?.wasRunning ?? false;
   } catch (error) {
-    console.warn("[nitpick] stop request failed", error);
+    console.warn("[holt] stop request failed", error);
   }
   if (!wasRunning) {
     await notifyToast("error", `The ${recorder === "tab" ? "tab recording" : "voice note"} had already stopped (the background recorder was gone); nothing was saved.`);
@@ -223,6 +223,6 @@ export async function reconcileRecordingState(): Promise<void> {
       if (panels.length === 0) await clearIfCurrent("screen", screen.id);
     }
   } catch (error) {
-    console.warn("[nitpick] could not reconcile the recording state", error);
+    console.warn("[holt] could not reconcile the recording state", error);
   }
 }

@@ -3,7 +3,7 @@
  *
  * How the pieces fit (Chrome 116+):
  *   1. The worker calls chrome.tabCapture.getMediaStreamId({ targetTabId }).
- *      That needs the activeTab grant for the tab (a nitpick shortcut or a
+ *      That needs the activeTab grant for the tab (a holt shortcut or a
  *      toolbar click on it); see background/recording.ts.
  *   2. The id is a short-lived, single-use token. The worker sends it here.
  *   3. We redeem it with getUserMedia and the legacy `mandatory`

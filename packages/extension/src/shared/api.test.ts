@@ -5,7 +5,7 @@ import {
   KIND_HEADER,
   TOKEN_HEADER,
   type EntryInput,
-} from "@nitpick/protocol";
+} from "@holt/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, baseMediaType, createApi } from "./api.js";
 
@@ -34,9 +34,9 @@ afterEach(() => {
 
 describe("request shaping", () => {
   it("GET /status under the base path with the client header and no token", async () => {
-    fetchMock.mockImplementation(async () => jsonResponse({ ok: true, name: "nitpick", version: "1", session: null, config: {} }));
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: true, name: "holt", version: "1", session: null, config: {} }));
     const status = await createApi({ serverUrl: SERVER, token: "" }).status();
-    expect(status.name).toBe("nitpick");
+    expect(status.name).toBe("holt");
     const { url, init, headers } = call();
     expect(url).toBe(`${SERVER}${BASE_PATH}/status`);
     expect(init.method).toBe("GET");
@@ -108,7 +108,7 @@ describe("error mapping", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ code: "unreachable" });
     expect((error as Error).message).toContain(SERVER);
-    expect((error as Error).message).toContain("npx nitpick-notes");
+    expect((error as Error).message).toContain("npx holt");
     expect((error as Error).message).toContain("Vite plugin");
   });
 

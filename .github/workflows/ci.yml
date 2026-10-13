@@ -26,10 +26,10 @@ jobs:
       # allow-list (tests, source maps, a stray .env) or declares a runtime
       # dependency. See packages/server/scripts/check-pack.mjs.
       - name: Check published files
-        run: pnpm --filter nitpick-notes check-pack
+        run: pnpm --filter holt check-pack
       # Load the built extension in a real headless Chrome and fail on any
       # startup error, forged-message acceptance, or storage leak.
       - name: Extension smoke test
-        run: pnpm --filter @nitpick/extension smoke
+        run: pnpm --filter @holt/extension smoke
         env:
           CHROME_PATH: /usr/bin/google-chrome

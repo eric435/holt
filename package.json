@@ -1,8 +1,8 @@
 {
-  "name": "nitpick-monorepo",
+  "name": "holt-monorepo",
   "private": true,
   "version": "0.0.0",
-  "description": "Monorepo for nitpick: unobtrusive screenshots, recordings and notes for QA, written straight into your repo.",
+  "description": "Monorepo for holt: unobtrusive screenshots, recordings and notes for QA, written straight into your repo.",
   "license": "MIT",
   "packageManager": "pnpm@10.25.0",
   "engines": {
@@ -12,8 +12,8 @@
     "build": "pnpm -r --filter './packages/**' run build",
     "test": "pnpm -r --filter './packages/**' run test",
     "typecheck": "pnpm -r --filter './packages/**' run typecheck",
-    "dev:server": "pnpm --filter nitpick-notes run dev",
-    "dev:extension": "pnpm --filter @nitpick/extension run dev"
+    "dev:server": "pnpm --filter holt run dev",
+    "dev:extension": "pnpm --filter @holt/extension run dev"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",

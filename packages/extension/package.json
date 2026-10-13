@@ -1,8 +1,8 @@
 {
-  "name": "@nitpick/extension",
+  "name": "@holt/extension",
   "version": "0.1.0",
   "private": true,
-  "description": "nitpick Chrome extension (Manifest V3): screenshots, screen recordings, voice and typed notes, sent to the local nitpick server.",
+  "description": "holt Chrome extension (Manifest V3): screenshots, screen recordings, voice and typed notes, sent to the local holt server.",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs && node scripts/check-manifest.mjs",
@@ -15,6 +15,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@nitpick/protocol": "workspace:*"
+    "@holt/protocol": "workspace:*"
   }
 }

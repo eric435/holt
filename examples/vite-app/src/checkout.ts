@@ -1,5 +1,5 @@
 // A small checkout form with a couple of deliberate rough edges worth
-// capturing with nitpick:
+// capturing with holt:
 //  - the coupon field accepts whitespace-only input;
 //  - the seat stepper does not clamp to min/max when clicked quickly.
 

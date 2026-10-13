@@ -6,12 +6,12 @@
  *   POST /session/stop           -> SessionResponse
  *   POST /media                  -> MediaUploadResponse
  *          raw bytes in the body; `Content-Type` must be in ACCEPTED_MEDIA_TYPES;
- *          `x-nitpick-kind` header says which entry kind the bytes are for
+ *          `x-holt-kind` header says which entry kind the bytes are for
  *          (used only to pick a readable file name).
  *   POST /entries                -> EntryResponse     body: EntryInput
  *
- * Every request must carry `x-nitpick-client: extension` and, if the server
- * is configured with a token, `x-nitpick-token`.
+ * Every request must carry `x-holt-client: extension` and, if the server
+ * is configured with a token, `x-holt-token`.
  *
  * Errors are returned as `{ ok: false, error: { code, message } }` with an
  * appropriate HTTP status.
@@ -36,7 +36,7 @@ export interface SessionInfo {
 
 /**
  * Which project this server writes into, so the extension can say
- * "acme-web" rather than just "nitpick 0.1.0" when several are running.
+ * "acme-web" rather than just "holt 0.1.0" when several are running.
  */
 export interface ProjectInfo {
   /** Display name, at most 100 characters. */
@@ -50,9 +50,9 @@ export interface ProjectInfo {
 
 export interface StatusResponse {
   ok: true;
-  /** The tool, always "nitpick". See `project` for what it is serving. */
-  name: "nitpick";
-  /** The nitpick server package version. */
+  /** The tool, always "holt". See `project` for what it is serving. */
+  name: "holt";
+  /** The holt server package version. */
   version: string;
   project: ProjectInfo;
   session: SessionInfo | null;

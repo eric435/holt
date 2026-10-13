@@ -1,5 +1,5 @@
 /**
- * `nitpick init`: write a starter nitpick.config.json.
+ * `holt init`: write a starter holt.config.json.
  *
  * Every key is written out with its default value, so the file doubles as
  * documentation (except `projectName`, whose default is derived from
@@ -9,11 +9,11 @@
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CONFIG_FILE_NAME } from "@nitpick/protocol";
+import { CONFIG_FILE_NAME } from "@holt/protocol";
 import { DEFAULTS } from "../config/defaults.js";
 
 export const STARTER_CONFIG = {
-  $schema: "./node_modules/nitpick-notes/schema.json",
+  $schema: "./node_modules/holt/schema.json",
   outputDir: DEFAULTS.outputDir,
   port: DEFAULTS.port,
   host: DEFAULTS.host,
@@ -31,7 +31,7 @@ export async function writeStarterConfig(cwd: string, force: boolean): Promise<s
     await writeFile(file, `${JSON.stringify(STARTER_CONFIG, null, 2)}\n`, { flag: force ? "w" : "wx" });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new Error(`${file} already exists. Use \`nitpick init --force\` to overwrite it.`);
+      throw new Error(`${file} already exists. Use \`holt init --force\` to overwrite it.`);
     }
     throw err;
   }

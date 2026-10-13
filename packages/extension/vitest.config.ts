@@ -9,6 +9,6 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
   },
   define: {
-    __NITPICK_VERSION__: JSON.stringify("0.0.0-test"),
+    __HOLT_VERSION__: JSON.stringify("0.0.0-test"),
   },
 });

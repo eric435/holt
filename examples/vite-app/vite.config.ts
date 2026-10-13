@@ -1,11 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import nitpick from "nitpick-notes/vite";
+import holt from "holt/vite";
 
 export default defineConfig({
-  // nitpick mounts its API at /__nitpick on this dev server. Settings come
-  // from ./nitpick.config.json; plugin options would override them.
-  plugins: [nitpick()],
+  // holt mounts its API at /__holt on this dev server. Settings come
+  // from ./holt.config.json; plugin options would override them.
+  plugins: [holt()],
   server: {
     // Bind explicitly to IPv4 loopback. "localhost" can resolve to ::1 only,
     // and the extension (and curl examples) use 127.0.0.1.

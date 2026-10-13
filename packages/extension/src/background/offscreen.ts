@@ -104,7 +104,7 @@ export function closeOffscreenIfIdle(): Promise<void> {
     if (!(await hasOffscreenDocument())) return;
     const status = await sendMessage({ type: "offscreen:status" }).catch(() => null);
     if (status && (status.tab || status.voice || status.uploading > 0)) return;
-    await chrome.offscreen.closeDocument().catch((error: unknown) => console.warn("[nitpick] closing the offscreen document failed", error));
+    await chrome.offscreen.closeDocument().catch((error: unknown) => console.warn("[holt] closing the offscreen document failed", error));
   });
 }
 

@@ -16,14 +16,14 @@
  */
 import { MAX_PROJECT_NAME_LENGTH } from "./defaults.js";
 import { hasUnsafeChars } from "./project.js";
-import type { NitpickConfig } from "./types.js";
+import type { HoltConfig } from "./types.js";
 
 export class ConfigError extends Error {
   override name = "ConfigError";
 }
 
 export interface ValidationResult {
-  config: NitpickConfig;
+  config: HoltConfig;
   warnings: string[];
 }
 
@@ -121,7 +121,7 @@ const extensionIdList: Check = (v) => {
   return null;
 };
 
-const CHECKS: Record<keyof NitpickConfig, Check> = {
+const CHECKS: Record<keyof HoltConfig, Check> = {
   outputDir: nonEmptyString,
   port: portNumber,
   host: nonEmptyString,
@@ -162,7 +162,7 @@ export function validateConfig(raw: unknown, source: string): ValidationResult {
       );
       continue;
     }
-    const problem = CHECKS[key as keyof NitpickConfig](value);
+    const problem = CHECKS[key as keyof HoltConfig](value);
     if (problem) errors.push(`"${key}" ${problem}`);
     else config[key] = value;
   }
@@ -171,7 +171,7 @@ export function validateConfig(raw: unknown, source: string): ValidationResult {
     const list = errors.map((e) => `  - ${e}`).join("\n");
     throw new ConfigError(`Invalid config in ${source}:\n${list}`);
   }
-  return { config: config as NitpickConfig, warnings };
+  return { config: config as HoltConfig, warnings };
 }
 
 /** Short, human description of a value for error messages. */

@@ -6,7 +6,7 @@ const features = [
   ["Accessible", "Keyboard friendly, screen-reader tested, contrast checked."],
   ["Private", "Your data stays on your machine, like your QA notes."],
   ["Typed", "TypeScript all the way down, until it isn't."],
-  ["Tested", "Unit tests, integration tests, and now nitpick sessions."],
+  ["Tested", "Unit tests, integration tests, and now holt sessions."],
   ["Documented", "Every option explained, some of them twice."],
 ];
 

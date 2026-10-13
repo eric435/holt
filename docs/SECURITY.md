@@ -1,6 +1,6 @@
 # Security notes
 
-nitpick is a local tool that writes files into your repository on request
+holt is a local tool that writes files into your repository on request
 from a browser extension. That combination deserves a clear threat model.
 This document describes what the code defends against, what it deliberately
 does not, and what you should know before changing the defaults.
@@ -18,7 +18,7 @@ into, as hostile.
 
 1. **A web page writing into your repo.** Any page can `fetch()`
    `http://127.0.0.1:4848`. Three checks stop it:
-   - Every request must carry the custom `x-nitpick-client` header. Browsers
+   - Every request must carry the custom `x-holt-client` header. Browsers
      cannot send a custom header cross-origin without a CORS preflight, and
      the server only answers the preflight for `chrome-extension://`
      origins (or ones listed in `allowedOrigins`).
@@ -85,7 +85,7 @@ into, as hostile.
 - **Anything you list in `allowedOrigins`.** Listing the app under test
   gives every script that runs on that app, including third-party ones,
   write access. Prefer not to.
-- **A committed `nitpick.config.json`.** It can widen `host`,
+- **A committed `holt.config.json`.** It can widen `host`,
   `allowedOrigins`, and `allowedExtensionIds`. The server logs each of these
   loudly at startup so a surprising value is visible.
 
@@ -111,14 +111,14 @@ as Vite is. Two consequences:
   Manifest V3 content security policy applies, and no extension page uses
   `innerHTML`.
 - `tabCapture` records a tab's picture and sound. Chrome only issues a
-  capture stream id for a tab where the user invoked nitpick (a shortcut or
+  capture stream id for a tab where the user invoked holt (a shortcut or
   a toolbar click: the activeTab grant, which ends when the tab navigates
   to another page), never for `chrome://` pages, and normally marks
-  a captured tab with its own capture indicator in the tab strip. nitpick
+  a captured tab with its own capture indicator in the tab strip. holt
   also shows "REC" on its toolbar icon while it records. `offscreen` only lets the extension create its
   own hidden page (the recorders); it grants no access to anything.
 - Microphone access is a per-origin permission the user grants once on
-  nitpick's own permissions page. Voice notes and the live transcript use
+  holt's own permissions page. Voice notes and the live transcript use
   Chrome's speech recognition, which sends audio to Google's speech
   service (see the extension README); the audio file goes only to the
   local server.
@@ -143,10 +143,10 @@ as Vite is. Two consequences:
 - Someone with shell access as your user. They can edit your repo directly.
 - The content of screenshots and recordings. They capture whatever is on
   screen, and page URLs are written with their query strings and fragments,
-  so an OAuth code or token in a URL will land in `notes.md`. When nitpick
+  so an OAuth code or token in a URL will land in `notes.md`. When holt
   creates the output directory it writes a `.gitignore` there so sessions
   are not committed unless you decide to. If the directory already existed,
-  nitpick leaves your ignore rules alone.
+  holt leaves your ignore rules alone.
 - Renderers of `notes.md`. GitHub, for example, autolinks bare `www.` text.
   Escaping prevents images and HTML; it cannot prevent a renderer from
   being helpful with plain text.

@@ -1,8 +1,8 @@
 /**
- * Vite plugin: `import nitpick from "nitpick-notes/vite"`.
+ * Vite plugin: `import holt from "holt/vite"`.
  *
- * Mounts the nitpick handler on Vite's dev server, so the extension talks
- * to the same origin as your app (e.g. http://localhost:5173/__nitpick/...)
+ * Mounts the holt handler on Vite's dev server, so the extension talks
+ * to the same origin as your app (e.g. http://localhost:5173/__holt/...)
  * and there is no second process to start.
  *
  * Notes:
@@ -15,7 +15,7 @@
  *    serving must not serve the session folders (see output-guard.ts).
  *  - `port`/`host` config keys are ignored: Vite owns the socket. Run
  *    Vite on loopback (its default) to keep the API off the network. If
- *    Vite listens on the network without a nitpick token, we warn; the
+ *    Vite listens on the network without a holt token, we warn; the
  *    handler refuses non-local requests in that case anyway.
  *  - Requires Vite >= 5.4.12 (see the peer range): older versions answer
  *    every request with `Access-Control-Allow-Origin: *`, letting any web
@@ -33,35 +33,35 @@
  */
 import type { AddressInfo } from "node:net";
 import type { Plugin, ViteDevServer } from "vite";
-import { BASE_PATH } from "@nitpick/protocol";
+import { BASE_PATH } from "@holt/protocol";
 import { describeProject } from "../config/project.js";
-import type { NitpickConfig } from "../config/types.js";
-import { createNitpick, type Nitpick } from "../core.js";
+import type { HoltConfig } from "../config/types.js";
+import { createHolt, type Holt } from "../core.js";
 import { isLoopbackAddress } from "../http/cors.js";
 import { LOG_PREFIX, type Logger } from "../log.js";
 import { requestTouchesOutputDir } from "./output-guard.js";
 
-export interface NitpickViteOptions extends Omit<NitpickConfig, "port"> {
-  /** Path to a config file (relative to the Vite root). Default: nitpick.config.json if present. */
+export interface HoltViteOptions extends Omit<HoltConfig, "port"> {
+  /** Path to a config file (relative to the Vite root). Default: holt.config.json if present. */
   configFile?: string;
 }
 
-export default function nitpick(options: NitpickViteOptions = {}): Plugin {
+export default function holt(options: HoltViteOptions = {}): Plugin {
   // One instance per plugin object. Vite re-evaluates vite.config on restart,
-  // which calls nitpick() again, so each dev server gets its own.
-  let instance: Nitpick | undefined;
+  // which calls holt() again, so each dev server gets its own.
+  let instance: Holt | undefined;
 
   return {
-    name: "nitpick",
+    name: "holt",
     apply: "serve",
 
     async configureServer(server: ViteDevServer) {
       const logger = viteLogger(server);
       const { configFile, ...overrides } = options;
-      const current = await createNitpick({
+      const current = await createHolt({
         cwd: server.config.root,
         overrides,
-        overridesSource: "nitpick() Vite plugin options",
+        overridesSource: "holt() Vite plugin options",
         ...(configFile !== undefined && { configFile }),
         logger,
       });
@@ -99,13 +99,13 @@ export default function nitpick(options: NitpickViteOptions = {}): Plugin {
         const address = httpServer.address();
         if (address && typeof address !== "string" && !isLoopbackAddress(address.address) && current.config.token === null) {
           logger.warn(
-            `Vite is listening on ${address.address}, which other machines can reach. nitpick will refuse ` +
-              `their requests because no "token" is set; set one if you need nitpick from another machine.`,
+            `Vite is listening on ${address.address}, which other machines can reach. holt will refuse ` +
+              `their requests because no "token" is set; set one if you need holt from another machine.`,
           );
         }
         const origin = originOf(address);
         logger.info(`serving ${project} at ${origin}${BASE_PATH}, writing sessions to ${current.config.outputDir}`);
-        logger.info(`Connect: set the nitpick extension's server URL to ${origin}`);
+        logger.info(`Connect: set the holt extension's server URL to ${origin}`);
       });
       httpServer.once("close", () => {
         current.close().catch((err: unknown) => logger.error(`failed to close session: ${String(err)}`));

@@ -27,7 +27,7 @@
  * note popup read and write the same keys.
  */
 
-import type { Entry, PageContext, ScreenshotMode } from "@nitpick/protocol";
+import type { Entry, PageContext, ScreenshotMode } from "@holt/protocol";
 
 /** An area selection the worker started and is waiting to hear back about. */
 export interface PendingArea {

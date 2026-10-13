@@ -19,7 +19,7 @@
  *      activeTab (captureVisibleTab succeeds), and page-helper metrics taken
  *      during the panel's open animation wait for the final width.
  *
- * Usage: pnpm --filter @nitpick/extension smoke   (build first)
+ * Usage: pnpm --filter @holt/extension smoke   (build first)
  * Env:   CHROME_PATH=/path/to/chrome   to use another Chrome/Chromium.
  */
 
@@ -46,13 +46,13 @@ const EXPECTED_COMMANDS = ["open-panel", "screenshot-viewport", "screenshot-full
 const log = (...args) => console.log("[smoke]", ...args);
 
 if (!existsSync(join(DIST, "manifest.json"))) {
-  console.error("[smoke] dist/ not built. Run: pnpm --filter @nitpick/extension build");
+  console.error("[smoke] dist/ not built. Run: pnpm --filter @holt/extension build");
   process.exit(1);
 }
 
 /** Fixture page on 127.0.0.1 (our host_permissions cover it, so the worker can inject without activeTab). */
 function startFixtureServer() {
-  const html = `<!doctype html><title>nitpick smoke fixture</title>
+  const html = `<!doctype html><title>holt smoke fixture</title>
     <style>body{margin:0;font:16px system-ui} header{position:fixed;top:0;left:0;right:0;height:40px;background:#eee}
     .tall{height:6000px;background:linear-gradient(#fff,#4c6ef5)}</style>
     <header>fixed header</header><div class="tall"></div>`;
@@ -123,7 +123,7 @@ async function run(headless) {
     // This Chrome has no fake media flags, so the extension has no microphone
     // grant. The offscreen recorder can't show a prompt; the start must fail
     // fast and the panel must offer permissions.html.
-    await evaluate(cdp, worker.sessionId, `nitpickTest.handleCommand("toggle-voice", undefined)`);
+    await evaluate(cdp, worker.sessionId, `holtTest.handleCommand("toggle-voice", undefined)`);
     const micToast = await waitFor(
       () => evaluate(cdp, panel, `(() => { const t = document.getElementById('toasts'); return /Microphone access is blocked/.test(t.innerText) ? t.innerText : null; })()`),
       { timeoutMs: 8_000, what: "the 'microphone blocked' toast" },
@@ -197,7 +197,7 @@ async function run(headless) {
           await inject("content/area-select.js");
           await inject("content/area-select.js");
           const [{ result: overlays }] = await chrome.scripting.executeScript({
-            target: { tabId: tab.id }, func: () => document.querySelectorAll("nitpick-area-select").length });
+            target: { tabId: tab.id }, func: () => document.querySelectorAll("holt-area-select").length });
           return { title: tab.title, metrics, scrolled, afterRestore, overlays, headerWhileHidden, headerAfterRestore, probes };
         })()`,
       );
@@ -205,7 +205,7 @@ async function run(headless) {
         problems.push(result.error);
       } else {
         log(`page-helper: scrollHeight=${result.metrics.scrollHeight} inner=${result.metrics.innerWidth}x${result.metrics.innerHeight} dpr=${result.metrics.devicePixelRatio}; scroll-to 1000 -> ${result.scrolled.scrollY}; restored -> ${result.afterRestore}`);
-        expect(result.title === "nitpick smoke fixture", `tab title not visible to the extension (got ${result.title})`);
+        expect(result.title === "holt smoke fixture", `tab title not visible to the extension (got ${result.title})`);
         expect(result.metrics.scrollHeight >= 6000, `unexpected scrollHeight ${result.metrics.scrollHeight}`);
         expect(result.scrolled.scrollY === 1000, `scroll-to landed at ${result.scrolled.scrollY}`);
         expect(result.afterRestore === 0, `restore left scrollY at ${result.afterRestore}`);
@@ -234,7 +234,7 @@ async function run(headless) {
           await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, page);
         }
         await sleep(500);
-        const overlaysAfterEsc = await evaluate(cdp, page, "document.querySelectorAll('nitpick-area-select').length");
+        const overlaysAfterEsc = await evaluate(cdp, page, "document.querySelectorAll('holt-area-select').length");
         expect(overlaysAfterEsc === 0, "Esc did not remove the area-select overlay");
         const toastSeen = await evaluate(cdp, panel, "document.getElementById('toasts').innerText.includes('Area selection cancelled')");
         expect(toastSeen, "panel did not receive the 'area selection cancelled' toast from the worker");

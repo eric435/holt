@@ -8,7 +8,7 @@ import {
   DEFAULT_MAX_UPLOAD_BYTES,
   DEFAULT_OUTPUT_DIR,
   DEFAULT_PORT,
-} from "@nitpick/protocol";
+} from "@holt/protocol";
 
 export const DEFAULTS = {
   outputDir: DEFAULT_OUTPUT_DIR,

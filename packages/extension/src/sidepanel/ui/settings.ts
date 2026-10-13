@@ -53,7 +53,7 @@ export function mountSettings(root: HTMLElement): void {
     h("label", {}, "Server URL", urlInput),
     urlHint,
     h("label", {}, "Token", tokenInput),
-    h("div", { class: "hint" }, "Only if nitpick.config.json sets a token. Stored on this device only (not synced)."),
+    h("div", { class: "hint" }, "Only if holt.config.json sets a token. Stored on this device only (not synced)."),
     h("label", { class: "check" }, keepAudio, "Keep audio of voice notes (not just the transcript)"),
     h("div", { class: "row end" }, save),
   );
@@ -61,7 +61,7 @@ export function mountSettings(root: HTMLElement): void {
   const about = h(
     "p",
     { class: "hint" },
-    `nitpick extension ${__NITPICK_VERSION__} · origin `,
+    `holt extension ${__HOLT_VERSION__} · origin `,
     h("code", {}, location.origin),
     " · shortcuts: ",
     h("a", { href: "#", onclick: openShortcutsPage }, "chrome://extensions/shortcuts"),

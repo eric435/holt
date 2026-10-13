@@ -18,12 +18,12 @@ describe("indicatorFor", () => {
       recording: false,
       text: "",
       color: REC_COLOR,
-      title: "nitpick: open the QA side panel",
+      title: "holt: open the QA side panel",
     });
   });
 
   it("idle with a known project names it", () => {
-    expect(indicatorFor({ recording: {}, shortcuts, projectName: "acme-web", formatClock }).title).toBe("nitpick (acme-web): open the QA side panel");
+    expect(indicatorFor({ recording: {}, shortcuts, projectName: "acme-web", formatClock }).title).toBe("holt (acme-web): open the QA side panel");
   });
 
   it("tab recording: red REC with start time and the stop shortcut", () => {
@@ -31,7 +31,7 @@ describe("indicatorFor", () => {
       recording: true,
       text: "REC",
       color: REC_COLOR,
-      title: "nitpick: recording tab since 14:02 (Alt+D to stop)",
+      title: "holt: recording tab since 14:02 (Alt+D to stop)",
     });
   });
 
@@ -40,7 +40,7 @@ describe("indicatorFor", () => {
       recording: true,
       text: "MIC",
       color: MIC_COLOR,
-      title: "nitpick: voice note since 14:03 (Alt+A to stop)",
+      title: "holt: voice note since 14:03 (Alt+A to stop)",
     });
   });
 
@@ -48,7 +48,7 @@ describe("indicatorFor", () => {
     const result = indicatorFor({ recording: { screen: tab, voice }, shortcuts, projectName: "acme", formatClock });
     expect(result.text).toBe("REC");
     expect(result.color).toBe(REC_COLOR);
-    expect(result.title).toBe("nitpick (acme): recording tab since 14:02 (Alt+D to stop) · voice note since 14:03 (Alt+A to stop)");
+    expect(result.title).toBe("holt (acme): recording tab since 14:02 (Alt+D to stop) · voice note since 14:03 (Alt+A to stop)");
   });
 
   it("window/screen recording from the panel says where to stop it", () => {
@@ -59,11 +59,11 @@ describe("indicatorFor", () => {
 
   it("names the microphone, and says when the selected one was missing", () => {
     expect(indicatorFor({ recording: { voice: { ...voice, microphoneLabel: "USB Mic" } }, shortcuts, formatClock }).title).toBe(
-      "nitpick: voice note since 14:03 on USB Mic (Alt+A to stop)",
+      "holt: voice note since 14:03 on USB Mic (Alt+A to stop)",
     );
     expect(
       indicatorFor({ recording: { voice: { ...voice, microphoneLabel: "Built-in", microphoneFallback: true } }, shortcuts, formatClock }).title,
-    ).toBe("nitpick: voice note since 14:03 on the default microphone (selected one not found) (Alt+A to stop)");
+    ).toBe("holt: voice note since 14:03 on the default microphone (selected one not found) (Alt+A to stop)");
   });
 
   it("unbound or rebound shortcuts are reflected", () => {

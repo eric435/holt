@@ -16,7 +16,7 @@ import {
   type MediaUploadResponse,
   type SessionResponse,
   type StatusResponse,
-} from "@nitpick/protocol";
+} from "@holt/protocol";
 import { MAX_JSON_BYTES, MAX_TITLE_LENGTH } from "../config/defaults.js";
 import type { ResolvedConfig } from "../config/types.js";
 import type { Logger } from "../log.js";
@@ -48,7 +48,7 @@ export const routes: Readonly<Record<string, Route>> = {
 async function status(_req: IncomingMessage, { config, sessions }: RouteContext): Promise<StatusResponse> {
   return {
     ok: true,
-    name: "nitpick",
+    name: "holt",
     version: VERSION,
     // A copy, so a route can never hand out (and a test never mutate) the
     // config's own object.

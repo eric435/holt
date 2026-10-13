@@ -3,16 +3,16 @@ import { displayHost, projectName, serverLabel } from "./server-label.js";
 
 describe("serverLabel", () => {
   it("puts the project first and drops http://", () => {
-    expect(serverLabel({ version: "0.1.0", project: { name: "nitpick-monorepo", source: "package.json" } }, "http://127.0.0.1:4848")).toEqual({
-      project: "nitpick-monorepo",
-      detail: "nitpick 0.1.0 · 127.0.0.1:4848",
+    expect(serverLabel({ version: "0.1.0", project: { name: "holt-monorepo", source: "package.json" } }, "http://127.0.0.1:4848")).toEqual({
+      project: "holt-monorepo",
+      detail: "holt 0.1.0 · 127.0.0.1:4848",
     });
   });
   it("tolerates an older server without `project`", () => {
-    expect(serverLabel({ version: "0.1.0" }, "http://localhost:5173")).toEqual({ project: null, detail: "nitpick 0.1.0 · localhost:5173" });
+    expect(serverLabel({ version: "0.1.0" }, "http://localhost:5173")).toEqual({ project: null, detail: "holt 0.1.0 · localhost:5173" });
   });
   it("tolerates junk", () => {
-    expect(serverLabel({ version: 3, project: "acme" }, "http://localhost:1")).toEqual({ project: null, detail: "nitpick · localhost:1" });
+    expect(serverLabel({ version: 3, project: "acme" }, "http://localhost:1")).toEqual({ project: null, detail: "holt · localhost:1" });
   });
 });
 

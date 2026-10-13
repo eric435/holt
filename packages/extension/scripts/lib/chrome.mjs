@@ -112,7 +112,7 @@ export async function attach(cdp, targetId) {
 /** Start Chrome with a fresh temp profile. Returns { proc, profile, port, wsUrl, headless }. */
 export async function launchChrome({ headless = true, extensionDir, extraArgs = [] } = {}) {
   if (!existsSync(CHROME)) throw new Error(`Chrome not found at ${CHROME}. Set CHROME_PATH.`);
-  const profile = mkdtempSync(join(tmpdir(), "nitpick-chrome-"));
+  const profile = mkdtempSync(join(tmpdir(), "holt-chrome-"));
   const args = [
     `--user-data-dir=${profile}`,
     "--remote-debugging-port=0",

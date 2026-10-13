@@ -11,7 +11,7 @@
  * We deliberately do not walk up parent directories looking for a
  * package.json. In a monorepo, `examples/vite-app` should be "vite-app" (or
  * whatever its own package.json says), not the workspace root's name, and
- * the root is already the directory nitpick writes into.
+ * the root is already the directory holt writes into.
  *
  * package.json is someone else's file that we only read for a label, so it
  * is treated defensively: missing, unreadable, too big, not JSON, or a name
@@ -24,7 +24,7 @@
  */
 import { open } from "node:fs/promises";
 import path from "node:path";
-import type { ProjectInfo } from "@nitpick/protocol";
+import type { ProjectInfo } from "@holt/protocol";
 import { MAX_PACKAGE_JSON_BYTES, MAX_PROJECT_NAME_LENGTH } from "./defaults.js";
 
 /**

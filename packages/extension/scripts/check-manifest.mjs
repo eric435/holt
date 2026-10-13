@@ -90,4 +90,4 @@ if (problems.length) {
   console.error("Manifest check FAILED:\n  - " + problems.join("\n  - "));
   process.exit(1);
 }
-console.log(`[nitpick] manifest check OK (${referenced.size} manifest files, content scripts present, permissions minimal)`);
+console.log(`[holt] manifest check OK (${referenced.size} manifest files, content scripts present, permissions minimal)`);

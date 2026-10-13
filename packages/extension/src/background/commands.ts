@@ -30,7 +30,7 @@
  * That is why `handleCommand` is a plain (non-async) function.
  */
 
-import type { ScreenshotMode } from "@nitpick/protocol";
+import type { ScreenshotMode } from "@holt/protocol";
 import { pageContextFromTab } from "../shared/page-context.js";
 import { takeScreenshot } from "./actions.js";
 import { openNotePopup } from "./note-popup.js";
@@ -73,6 +73,6 @@ export function handleCommand(command: string, tab: chrome.tabs.Tab | undefined)
 /** Must be called synchronously from a user-gesture handler. */
 export function openSidePanel(windowId: number): void {
   chrome.sidePanel.open({ windowId }).catch((error: unknown) => {
-    console.warn("[nitpick] could not open the side panel", error);
+    console.warn("[holt] could not open the side panel", error);
   });
 }

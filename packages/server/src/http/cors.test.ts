@@ -84,7 +84,7 @@ describe("checkOriginAndHost", () => {
     for (const header of ["sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest"]) {
       expect(() =>
         checkOriginAndHost(fakeReq({ host: "127.0.0.1:4848", [header]: "same-origin" }, "127.0.0.1"), config()),
-      ).toThrow(/Browser requests must come from the nitpick extension/);
+      ).toThrow(/Browser requests must come from the holt extension/);
     }
   });
 

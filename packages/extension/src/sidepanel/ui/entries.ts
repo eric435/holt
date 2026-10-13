@@ -11,7 +11,7 @@
  * screenshot's number.
  */
 
-import type { Entry } from "@nitpick/protocol";
+import type { Entry } from "@holt/protocol";
 import { errorMessage } from "../../shared/messages.js";
 import { getState as getStoredState, onStateChanged, type RecentEntry } from "../../shared/state.js";
 import { getState, subscribe } from "../store.js";

@@ -1,4 +1,4 @@
-/** Default TCP port for the standalone server (`npx nitpick`). */
+/** Default TCP port for the standalone server (`npx holt`). */
 export const DEFAULT_PORT = 4848;
 
 /** Loopback only. Never bind to 0.0.0.0: the server writes files to disk. */
@@ -9,7 +9,7 @@ export const DEFAULT_HOST = "127.0.0.1";
  * mounted either on its own port (standalone) or inside an existing dev server
  * (Vite plugin) without route collisions with the user's app.
  */
-export const BASE_PATH = "/__nitpick";
+export const BASE_PATH = "/__holt";
 
 /** Default directory (relative to the project root) where sessions are written. */
 export const DEFAULT_OUTPUT_DIR = "qa";
@@ -25,16 +25,16 @@ export const SESSION_FILE_NAME = "notes.md";
  * send a CORS preflight. Requiring a custom header turns every cross-origin
  * request into a preflighted one, and the server only answers the preflight
  * for `chrome-extension://` origins. A random website therefore cannot
- * write into your repo through nitpick.
+ * write into your repo through holt.
  */
-export const CLIENT_HEADER = "x-nitpick-client";
+export const CLIENT_HEADER = "x-holt-client";
 export const CLIENT_HEADER_VALUE = "extension";
 
-/** Optional shared secret, configured in nitpick.config.json and the extension. */
-export const TOKEN_HEADER = "x-nitpick-token";
+/** Optional shared secret, configured in holt.config.json and the extension. */
+export const TOKEN_HEADER = "x-holt-token";
 
 /** Header the extension sets on media uploads to say what the bytes are. */
-export const KIND_HEADER = "x-nitpick-kind";
+export const KIND_HEADER = "x-holt-kind";
 
 /** Upload size limit the server enforces by default (bytes). Configurable. */
 export const DEFAULT_MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
@@ -52,4 +52,4 @@ export const ACCEPTED_MEDIA_TYPES: Readonly<Record<string, string>> = {
 };
 
 /** Name of the config file the server looks for in the project root. */
-export const CONFIG_FILE_NAME = "nitpick.config.json";
+export const CONFIG_FILE_NAME = "holt.config.json";

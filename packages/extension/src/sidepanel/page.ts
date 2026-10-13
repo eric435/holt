@@ -7,7 +7,7 @@
  * tabs we have access to; see shared/page-context.ts.
  */
 
-import type { PageContext } from "@nitpick/protocol";
+import type { PageContext } from "@holt/protocol";
 import { pageContextFromTab } from "../shared/page-context.js";
 import { getState } from "./store.js";
 

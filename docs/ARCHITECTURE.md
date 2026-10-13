@@ -1,18 +1,18 @@
-# nitpick architecture
+# holt architecture
 
-nitpick lets you take screenshots, record your screen, and dictate or type
+holt lets you take screenshots, record your screen, and dictate or type
 notes while clicking through your own app, and writes all of it into a single
 markdown file (plus media files) inside your repo. It has two halves that talk
 over localhost HTTP:
 
 ```
 ┌──────────────────────────────┐          ┌───────────────────────────────┐
-│  Chrome extension (MV3)      │  HTTP    │  nitpick server (Node)        │
+│  Chrome extension (MV3)      │  HTTP    │  holt server (Node)           │
 │                              │ ───────▶ │                               │
 │  side panel  = the UI        │ JSON +   │  core request handler         │
 │  service worker = coordinator│ raw bytes│  session + markdown writer    │
 │  content script = page helper│          │  config loader                │
-│                              │          │  ├─ CLI adapter (npx nitpick) │
+│                              │          │  ├─ CLI adapter (npx holt)    │
 │                              │          │  └─ Vite plugin adapter       │
 └──────────────────────────────┘          └───────────────────────────────┘
                                                         │
@@ -23,7 +23,7 @@ over localhost HTTP:
 ```
 
 The wire format between the halves is defined once, in
-[`packages/shared`](../packages/shared/src/index.ts) (`@nitpick/protocol`).
+[`packages/shared`](../packages/shared/src/index.ts) (`@holt/protocol`).
 Both sides import those types, so a protocol change that is not applied on
 both sides fails to compile.
 
@@ -31,37 +31,37 @@ both sides fails to compile.
 
 ```
 packages/
-  shared/      @nitpick/protocol  types + constants, zero runtime code
-  server/      nitpick-notes      the published npm package (CLI, Vite plugin, core)
-  extension/   @nitpick/extension the Chrome extension (built with esbuild, loaded unpacked)
+  shared/      @holt/protocol   types + constants, zero runtime code
+  server/      holt             the published npm package (CLI, Vite plugin, core)
+  extension/   @holt/extension  the Chrome extension (built with esbuild, loaded unpacked)
 examples/
-  vite-app/    a tiny app to try nitpick against
+  vite-app/    a tiny app to try holt against
 docs/
   ARCHITECTURE.md  this file
   SECURITY.md      threat model and the rules the code follows
 ```
 
-pnpm workspaces link the packages together. `@nitpick/protocol` has no build
+pnpm workspaces link the packages together. `@holt/protocol` has no build
 step: the other packages import its TypeScript source directly and their own
 bundlers (tsup for the server, esbuild for the extension) compile it in.
 
-## The server package (`packages/server`, published as `nitpick-notes`)
+## The server package (`packages/server`, published as `holt`)
 
 Layered so each piece is testable on its own and the HTTP surface is
 framework-agnostic:
 
 ```
 src/
-  config/        load + validate nitpick.config.json; defaults; JSON schema
+  config/        load + validate holt.config.json; defaults; JSON schema
   session/       SessionStore: the one active session; folder + file naming;
                  MarkdownWriter: appends entries to notes.md
   http/          createHandler(): a plain (req, res) => Promise<boolean> that
                  implements the protocol; CORS/origin/token checks; body limits
   adapters/
     standalone/  createServer(): node:http server on DEFAULT_PORT (used by the CLI)
-    vite/        nitpick/vite: Vite plugin that mounts the handler on the dev server
-  cli/           `nitpick` bin: parses args, loads config, starts standalone server
-  index.ts       public API: createNitpick(), types
+    vite/        holt/vite: Vite plugin that mounts the handler on the dev server
+  cli/           `holt` bin: parses args, loads config, starts standalone server
+  index.ts       public API: createHolt(), types
 ```
 
 Key decisions:
@@ -70,7 +70,7 @@ Key decisions:
   in other people's projects; every dependency we add is attack surface in
   their supply chain. Node's `http`, `fs`, `path`, `crypto` cover everything.
   Vite is an optional peer dependency used only by the Vite adapter.
-- **The handler is mounted under `/__nitpick` everywhere.** Standalone and
+- **The handler is mounted under `/__holt` everywhere.** Standalone and
   Vite-plugin modes expose identical URLs, so the extension only needs to
   know an origin.
 - **The server owns all file names.** The extension never sends a path. Media
@@ -210,14 +210,14 @@ Three MV3 details that shaped the code and are worth knowing:
 The side panel's "Record tab" and "Voice note" buttons send `recorder:toggle`
 to the worker and take exactly this path. The toolbar icon is the status
 indicator: "REC"/"MIC" badge, a red dot drawn on the icon, and a tooltip
-like "nitpick (acme-web): recording tab since 14:02 (⌥D to stop)". It is
+like "holt (acme-web): recording tab since 14:02 (⌥D to stop)". It is
 browser UI, so it never appears in screenshots or tab recordings.
 
 Permissions are the minimum: `activeTab` (granted by a hotkey or clicking the
 icon, scoped to that tab, no host permissions), `sidePanel`, `scripting`,
 `storage`, `offscreen` (the recorders' hidden page) and `tabCapture`
 ("Record tab": no picker, follows the tab across navigations, and only
-usable on a tab where the user invoked nitpick). Keyboard shortcuts come
+usable on a tab where the user invoked holt). Keyboard shortcuts come
 from the `commands` manifest key, which is not a permission. Network access
 to the local server uses `host_permissions` for `http://127.0.0.1/*` and
 `http://localhost/*` only.
@@ -245,11 +245,11 @@ can call `getDisplayMedia` from a click. For the same reasons the
 
 ## Configuration
 
-`nitpick.config.json` in the project root (all keys optional):
+`holt.config.json` in the project root (all keys optional):
 
 ```json
 {
-  "$schema": "./node_modules/nitpick-notes/schema.json",
+  "$schema": "./node_modules/holt/schema.json",
   "outputDir": "qa",
   "port": 4848,
   "host": "127.0.0.1",

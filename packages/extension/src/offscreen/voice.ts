@@ -252,7 +252,7 @@ function describeSpeechError(code: string): string {
   switch (code) {
     case "not-allowed":
     case "service-not-allowed":
-      return "Speech recognition is not allowed in nitpick's background recorder (microphone permission or browser policy). Audio was still recorded.";
+      return "Speech recognition is not allowed in holt's background recorder (microphone permission or browser policy). Audio was still recorded.";
     case "network":
       return "Speech recognition needs a network connection (Chrome uses an online service). Audio was still recorded.";
     case "audio-capture":

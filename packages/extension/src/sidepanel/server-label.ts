@@ -2,7 +2,7 @@
  * What the status line says about the server (pure, unit-tested):
  *
  *   acme-web                         <- project, prominent
- *   nitpick 0.1.0 · 127.0.0.1:4848   <- muted detail
+ *   holt 0.1.0 · 127.0.0.1:4848   <- muted detail
  *
  * `project` is newer than the rest of the status response, so an older
  * server may not send it; we then show only the detail line. The value
@@ -24,7 +24,7 @@ export interface ServerLabel {
 
 export function serverLabel(status: StatusLike, serverUrl: string): ServerLabel {
   const version = typeof status.version === "string" && status.version ? ` ${status.version}` : "";
-  return { project: projectName(status), detail: `nitpick${version} · ${displayHost(serverUrl)}` };
+  return { project: projectName(status), detail: `holt${version} · ${displayHost(serverUrl)}` };
 }
 
 export function projectName(status: StatusLike): string | null {

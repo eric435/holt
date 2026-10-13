@@ -4,7 +4,7 @@ import { friendlyCaptureError, friendlyRecordingError } from "./errors.js";
 describe("friendlyCaptureError", () => {
   it("explains a missing activeTab grant", () => {
     const msg = friendlyCaptureError(new Error("Either the '<all_urls>' or 'activeTab' permission is required."));
-    expect(msg).toMatch(/invoke nitpick/);
+    expect(msg).toMatch(/invoke holt/);
     expect(msg).toMatch(/Alt\+S\b/);
   });
 
@@ -33,7 +33,7 @@ describe("friendlyRecordingError", () => {
     const msg = friendlyRecordingError(
       new Error("Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured."),
     );
-    expect(msg).toMatch(/invoke nitpick/);
+    expect(msg).toMatch(/invoke holt/);
     expect(msg).toMatch(/Record a window or screen/);
   });
   it("explains a tab that is already captured", () => {

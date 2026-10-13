@@ -29,7 +29,7 @@ importers:
 
   examples/vite-app:
     devDependencies:
-      nitpick-notes:
+      holt:
         specifier: workspace:*
         version: link:../../packages/server
       vite:
@@ -38,13 +38,13 @@ importers:
 
   packages/extension:
     dependencies:
-      '@nitpick/protocol':
+      '@holt/protocol':
         specifier: workspace:*
         version: link:../shared
 
   packages/server:
     devDependencies:
-      '@nitpick/protocol':
+      '@holt/protocol':
         specifier: workspace:*
         version: link:../shared
       vite:

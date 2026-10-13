@@ -1,6 +1,6 @@
-# nitpick-notes
+# holt
 
-The local server half of **nitpick**: take screenshots, record your screen,
+The local server half of **holt**: take screenshots, record your screen,
 and dictate or type notes while clicking through your own app, and get all of
 it as one markdown file (plus media) inside your repo.
 
@@ -12,14 +12,14 @@ qa/2026-10-13-075200/
   003-voice-note.webm
 ```
 
-This package receives captures from the nitpick Chrome extension over
+This package receives captures from the holt Chrome extension over
 localhost HTTP and writes the files. It has **zero runtime dependencies**.
 
 ## Install
 
 ```bash
-npm i -D nitpick-notes
-# or: pnpm add -D nitpick-notes / yarn add -D nitpick-notes
+npm i -D holt
+# or: pnpm add -D holt / yarn add -D holt
 ```
 
 Requires Node.js 20 or newer.
@@ -29,28 +29,25 @@ Requires Node.js 20 or newer.
 ### Standalone (any stack)
 
 ```bash
-npx nitpick-notes
+npx holt
 ```
 
-(Once installed locally, `npx nitpick` works too. Before installing, use the
-full package name: `nitpick` on its own is a different npm package.)
-
 ```
-[nitpick] v0.1.0 serving my-app (from package.json) at http://127.0.0.1:4848/__nitpick
-[nitpick] Writing sessions to /path/to/app/qa
-[nitpick] Connect: open the nitpick extension's side panel and set the server URL to http://127.0.0.1:4848
+[holt] v0.1.0 serving my-app (from package.json) at http://127.0.0.1:4848/__holt
+[holt] Writing sessions to /path/to/app/qa
+[holt] Connect: open the holt extension's side panel and set the server URL to http://127.0.0.1:4848
 ```
 
 Options:
 
 ```
-nitpick [--port <n>] [--host <host>] [--out <dir>] [--project-name <name>]
-        [--config <file>] [--token <secret>]
-nitpick init [--force]    write a starter nitpick.config.json
-nitpick --help | --version
+holt [--port <n>] [--host <host>] [--out <dir>] [--project-name <name>]
+     [--config <file>] [--token <secret>]
+holt init [--force]   write a starter holt.config.json
+holt --help | --version
 ```
 
-Flags override `nitpick.config.json`, which overrides the defaults. Ctrl+C
+Flags override `holt.config.json`, which overrides the defaults. Ctrl+C
 ends the active session cleanly.
 
 ### Vite plugin
@@ -58,14 +55,14 @@ ends the active session cleanly.
 ```ts
 // vite.config.ts
 import { defineConfig } from "vite";
-import nitpick from "nitpick-notes/vite";
+import holt from "holt/vite";
 
 export default defineConfig({
-  plugins: [nitpick()],
+  plugins: [holt()],
 });
 ```
 
-The API is mounted on Vite's dev server at `/__nitpick`, so point the
+The API is mounted on Vite's dev server at `/__holt`, so point the
 extension at your dev server's URL (e.g. `http://localhost:5173`). The plugin
 does nothing during `vite build`. Options are the same keys as the config file
 (`port` is ignored; Vite owns the port), plus `configFile`.
@@ -79,33 +76,33 @@ dev server.
 `>=5.4.12`). Earlier versions answer every dev-server request with
 `Access-Control-Allow-Origin: *`, so any web page you visit could read your
 app's source through the dev server. Vite is an optional peer: you only need
-it if you use `nitpick-notes/vite`.
+it if you use `holt/vite`.
 
 ### Programmatic
 
 ```ts
 import http from "node:http";
-import { createNitpick } from "nitpick-notes";
+import { createHolt } from "holt";
 
-const nitpick = await createNitpick({ cwd: process.cwd() });
+const holt = await createHolt({ cwd: process.cwd() });
 http.createServer(async (req, res) => {
-  if (await nitpick.handler(req, res)) return; // handled /__nitpick/*
+  if (await holt.handler(req, res)) return; // handled /__holt/*
   // ...your own routes
 }).listen(3000, "127.0.0.1");
 ```
 
-`handler(req, res)` resolves to `false` for paths outside `/__nitpick`, so it
+`handler(req, res)` resolves to `false` for paths outside `/__holt`, so it
 drops into any node:http or connect-style middleware chain.
 
 ## Configuration
 
-`nitpick.config.json` in your project root. Every key is optional. Run
-`npx nitpick init` to create one with the defaults and a `$schema` for editor
+`holt.config.json` in your project root. Every key is optional. Run
+`npx holt init` to create one with the defaults and a `$schema` for editor
 autocomplete.
 
 ```json
 {
-  "$schema": "./node_modules/nitpick-notes/schema.json",
+  "$schema": "./node_modules/holt/schema.json",
   "outputDir": "qa",
   "token": null
 }
@@ -116,7 +113,7 @@ autocomplete.
 | `outputDir` | string | `"qa"` | Where session folders go, relative to the project root. |
 | `port` | integer | `4848` | Standalone server port. Ignored by the Vite plugin. |
 | `host` | string | `"127.0.0.1"` | Interface to bind. A non-loopback host requires a `token`. |
-| `token` | string \| null | `null` | Shared secret the extension must send (`x-nitpick-token`). Required for requests from other machines. |
+| `token` | string \| null | `null` | Shared secret the extension must send (`x-holt-token`). Required for requests from other machines. |
 | `maxUploadBytes` | integer | `209715200` (200 MiB) | Size limit for one screenshot or recording. |
 | `sessionTitle` | string | `"QA session"` | H1 title for new sessions. |
 | `projectName` | string | `name` from `./package.json`, else the directory name | Name the extension shows for this server ("my-app at http://127.0.0.1:4848"), so you can tell several apart. At most 100 characters, no control characters. Parent directories are not searched. |
@@ -129,7 +126,7 @@ non-default `host`, is logged at startup.
 
 **Pinning the extension:** by default any installed Chrome extension may call
 the server. To allow only yours, copy its ID from `chrome://extensions` into
-`allowedExtensionIds` (`nitpick init` leaves this key out because the ID
+`allowedExtensionIds` (`holt init` leaves this key out because the ID
 differs per install):
 
 ```json
@@ -168,7 +165,7 @@ Coupon field accepts whitespace-only input.
 _Session ended at 2026-10-13T08:10:00-07:00 (2 entries)._
 ```
 
-When nitpick creates the output directory, it puts a `.gitignore` in it so
+When holt creates the output directory, it puts a `.gitignore` in it so
 sessions are not committed by default (screenshots can contain anything that
 was on screen). Delete that file if you want to commit sessions.
 
@@ -183,7 +180,7 @@ default:
 - Rejects requests whose `Host` is not a loopback name (DNS rebinding).
 - Only `chrome-extension://` origins (optionally pinned with
   `allowedExtensionIds`, plus any you list in `allowedOrigins`) may call it.
-  Every request needs an `x-nitpick-client` header, which forces a CORS
+  Every request needs an `x-holt-client` header, which forces a CORS
   preflight that web pages fail. Requests with no `Origin` are accepted only
   from non-browser clients (curl) on this machine.
 - Optional shared `token`.
@@ -195,7 +192,7 @@ default:
 - Page titles, URLs and notes are escaped before they go into markdown.
 - No runtime dependencies.
 
-Full threat model: [docs/SECURITY.md](https://github.com/OWNER/nitpick/blob/main/docs/SECURITY.md).
+Full threat model: [docs/SECURITY.md](https://github.com/eric435/holt/blob/main/docs/SECURITY.md).
 
 ## License
 

@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://unpkg.com/nitpick-notes/schema.json",
-  "title": "nitpick.config.json",
-  "description": "Configuration for nitpick-notes, the local server for the nitpick Chrome extension. Every key is optional. This schema is for editor autocomplete only; the server validates the file itself.",
+  "$id": "https://unpkg.com/holt/schema.json",
+  "title": "holt.config.json",
+  "description": "Configuration for holt, the local server for the holt Chrome extension. Every key is optional. This schema is for editor autocomplete only; the server validates the file itself.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -14,14 +14,14 @@
       "type": "string",
       "minLength": 1,
       "default": "qa",
-      "description": "Directory (relative to the project root) where session folders are written. If nitpick creates it, it adds a .gitignore so sessions are not committed by default."
+      "description": "Directory (relative to the project root) where session folders are written. If holt creates it, it adds a .gitignore so sessions are not committed by default."
     },
     "port": {
       "type": "integer",
       "minimum": 0,
       "maximum": 65535,
       "default": 4848,
-      "description": "Port for the standalone server (`npx nitpick`). Ignored by the Vite plugin, which uses Vite's port."
+      "description": "Port for the standalone server (`npx holt`). Ignored by the Vite plugin, which uses Vite's port."
     },
     "host": {
       "type": "string",
@@ -36,7 +36,7 @@
       ],
       "minLength": 1,
       "default": null,
-      "description": "Optional shared secret. When set, the extension must send it in the x-nitpick-token header. Enter the same value in the extension settings. Required for any request from another machine."
+      "description": "Optional shared secret. When set, the extension must send it in the x-holt-token header. Enter the same value in the extension settings. Required for any request from another machine."
     },
     "maxUploadBytes": {
       "type": "integer",
@@ -69,7 +69,7 @@
     "allowedExtensionIds": {
       "type": "array",
       "default": [],
-      "description": "Chrome extension IDs allowed to call the API (32 letters a-p, as shown on chrome://extensions). Empty allows any chrome-extension:// origin; set it to pin nitpick to your installed copy of the extension.",
+      "description": "Chrome extension IDs allowed to call the API (32 letters a-p, as shown on chrome://extensions). Empty allows any chrome-extension:// origin; set it to pin holt to your installed copy of the extension.",
       "items": {
         "type": "string",
         "pattern": "^[a-p]{32}$"

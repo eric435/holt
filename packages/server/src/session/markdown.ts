@@ -10,7 +10,7 @@
  * Every piece of user-controlled text passes through ./escape.ts. File names
  * are not escaped because the server generated them (see naming.ts).
  */
-import type { Entry, PageContext } from "@nitpick/protocol";
+import type { Entry, PageContext } from "@holt/protocol";
 import { blockquote, escapeBlock, escapeInline, safeUrl } from "./escape.js";
 
 export interface HeaderInput {

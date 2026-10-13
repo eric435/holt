@@ -52,7 +52,7 @@ export function microphonePicker(): HTMLElement {
     grant.hidden = named;
     status.textContent = named
       ? "Used for voice notes. On recent Chrome the transcript comes from this microphone too; older versions transcribe from the system default."
-      : "Chrome shows microphone names only after nitpick has microphone access.";
+      : "Chrome shows microphone names only after holt has microphone access.";
   }
 
   select.addEventListener("change", () => {

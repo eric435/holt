@@ -11,8 +11,8 @@ export function friendlyCaptureError(error: unknown): string {
   // captureVisibleTab / executeScript without an activeTab grant for this tab.
   if (/activeTab|<all_urls>|Cannot access contents|must request permission/i.test(text)) {
     return (
-      "Chrome only lets nitpick capture a tab after you invoke nitpick on it. " +
-      "Press a nitpick shortcut (e.g. Alt+S) or click the nitpick toolbar icon on this tab, " +
+      "Chrome only lets holt capture a tab after you invoke holt on it. " +
+      "Press a holt shortcut (e.g. Alt+S) or click the holt toolbar icon on this tab, " +
       "then try again. The permission lasts until the tab navigates to another page."
     );
   }
@@ -41,14 +41,14 @@ export function friendlyRecordingError(error: unknown): string {
   const text = errorMessage(error);
   if (/has not been invoked|activeTab/i.test(text)) {
     return (
-      "Chrome only lets nitpick record a tab after you invoke nitpick on it. " +
-      "Press the record shortcut on the tab itself, or click the nitpick toolbar icon on it, then try again. " +
+      "Chrome only lets holt record a tab after you invoke holt on it. " +
+      "Press the record shortcut on the tab itself, or click the holt toolbar icon on it, then try again. " +
       "(chrome:// pages and the Web Store can't be recorded at all.) " +
       "Or use “Record a window or screen…” in the side panel."
     );
   }
   if (/active stream/i.test(text)) {
-    return "This tab is already being captured (by nitpick or another extension). Stop that capture first.";
+    return "This tab is already being captured (by holt or another extension). Stop that capture first.";
   }
   return friendlyCaptureError(text);
 }

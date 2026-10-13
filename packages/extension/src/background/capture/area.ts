@@ -15,7 +15,7 @@
  * sends the message, so it is not in the screenshot.
  */
 
-import type { PageContext } from "@nitpick/protocol";
+import type { PageContext } from "@holt/protocol";
 import type { AreaSelectedMessage } from "../../shared/messages.js";
 import { setState } from "../../shared/state.js";
 import { AREA_SELECT_FILE, injectFile } from "./inject.js";

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { EntryInput } from "@nitpick/protocol";
+import type { EntryInput } from "@holt/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MAX_PENDING_UPLOADS } from "../config/defaults.js";
 import { SessionError, SessionStore, assertInside } from "./store.js";
@@ -11,7 +11,7 @@ let outputDir: string;
 let clock: Date;
 
 beforeEach(async () => {
-  root = await mkdtemp(path.join(tmpdir(), "nitpick-store-"));
+  root = await mkdtemp(path.join(tmpdir(), "holt-store-"));
   outputDir = path.join(root, "qa");
   clock = new Date(2026, 9, 13, 7, 52, 0);
 });

@@ -14,7 +14,7 @@
  * either a panel toast or a badge flash.
  */
 
-import type { Entry, SessionInfo } from "@nitpick/protocol";
+import type { Entry, SessionInfo } from "@holt/protocol";
 import { isNoReceiverError, sendMessage, type ToastAction, type ToastLevel } from "../shared/messages.js";
 import { addRecentEntry } from "../shared/state.js";
 import { flashBadge } from "./indicator.js";
@@ -28,7 +28,7 @@ export async function notifyEntryAdded(entry: Entry, session: SessionInfo): Prom
 /** Returns true if an open side panel showed it. */
 export async function notifyToast(level: ToastLevel, message: string, action?: ToastAction): Promise<boolean> {
   const delivered = await broadcast(() => sendMessage(action ? { type: "toast", level, message, action } : { type: "toast", level, message }));
-  if (!delivered && level === "error") await flashBadge("!", "#e03131", `nitpick: ${message}`);
+  if (!delivered && level === "error") await flashBadge("!", "#e03131", `holt: ${message}`);
   return delivered;
 }
 

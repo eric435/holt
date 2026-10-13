@@ -1,4 +1,4 @@
-import type { Entry } from "@nitpick/protocol";
+import type { Entry } from "@holt/protocol";
 import { describe, expect, it } from "vitest";
 import {
   formatDuration,

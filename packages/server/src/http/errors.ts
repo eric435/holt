@@ -12,7 +12,7 @@
  * and no response, since there is nobody left to send one to.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ApiResponse, ErrorCode, ErrorResponse } from "@nitpick/protocol";
+import type { ApiResponse, ErrorCode, ErrorResponse } from "@holt/protocol";
 import type { Logger } from "../log.js";
 import { SessionError, type SessionErrorReason } from "../session/store.js";
 
@@ -69,7 +69,7 @@ export function sendError(req: IncomingMessage, res: ServerResponse, err: unknow
     httpError = new HttpError(status, code, err.message);
   } else {
     logger.error(`${req.method} ${req.url} failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
-    httpError = new HttpError(500, "internal", "Internal error; see the nitpick server log");
+    httpError = new HttpError(500, "internal", "Internal error; see the holt server log");
   }
 
   // Nothing we can do if the client already went away or we already replied.

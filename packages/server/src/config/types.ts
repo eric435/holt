@@ -1,22 +1,22 @@
 /**
  * Configuration types.
  *
- * `NitpickConfig` is what a user writes (every key optional): the shape of
- * nitpick.config.json, Vite plugin options, and CLI flags.
+ * `HoltConfig` is what a user writes (every key optional): the shape of
+ * holt.config.json, Vite plugin options, and CLI flags.
  * `ResolvedConfig` is what the rest of the server works with: every key
  * filled in, paths made absolute. Keeping the two separate means no code
  * past the loader ever has to ask "was this set?".
  */
-import type { ProjectInfo } from "@nitpick/protocol";
+import type { ProjectInfo } from "@holt/protocol";
 
-export interface NitpickConfig {
+export interface HoltConfig {
   /** Where session folders are written, relative to the project root. */
   outputDir?: string;
   /** Port for the standalone server. Ignored by the Vite plugin. */
   port?: number;
   /** Interface the standalone server binds to. Keep it on loopback. */
   host?: string;
-  /** Optional shared secret the extension must send in `x-nitpick-token`. */
+  /** Optional shared secret the extension must send in `x-holt-token`. */
   token?: string | null;
   /** Upper limit for a single media upload, in bytes. */
   maxUploadBytes?: number;
@@ -35,7 +35,7 @@ export interface NitpickConfig {
   /**
    * Chrome extension IDs (32 letters a-p) allowed to call the API. Empty
    * (the default) allows any chrome-extension:// origin; set this to pin
-   * nitpick to your installed copy of the extension.
+   * holt to your installed copy of the extension.
    */
   allowedExtensionIds?: string[];
 }

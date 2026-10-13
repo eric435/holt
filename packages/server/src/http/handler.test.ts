@@ -17,11 +17,11 @@ import {
   type MediaUploadResponse,
   type SessionResponse,
   type StatusResponse,
-} from "@nitpick/protocol";
+} from "@holt/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startStandalone, type StandaloneServer } from "../adapters/standalone.js";
-import type { NitpickConfig } from "../config/types.js";
-import { createNitpick, type Nitpick } from "../core.js";
+import type { HoltConfig } from "../config/types.js";
+import { createHolt, type Holt } from "../core.js";
 import { MAX_PENDING_UPLOADS } from "../config/defaults.js";
 import { silentLogger, type Logger } from "../log.js";
 import { VERSION } from "../version.js";
@@ -42,19 +42,19 @@ afterEach(async () => {
   running = extraServer = tempDir = undefined;
 });
 
-async function createInstance(overrides: NitpickConfig = {}, logger: Logger = silentLogger): Promise<Nitpick> {
-  tempDir = await mkdtemp(path.join(tmpdir(), "nitpick-http-"));
-  return createNitpick({ cwd: tempDir, overrides: { port: 0, ...overrides }, logger });
+async function createInstance(overrides: HoltConfig = {}, logger: Logger = silentLogger): Promise<Holt> {
+  tempDir = await mkdtemp(path.join(tmpdir(), "holt-http-"));
+  return createHolt({ cwd: tempDir, overrides: { port: 0, ...overrides }, logger });
 }
 
 /** Start a standalone server and return the API base URL. */
 async function startServer(
-  overrides: NitpickConfig = {},
+  overrides: HoltConfig = {},
   logger: Logger = silentLogger,
-): Promise<{ api: string; nitpick: Nitpick }> {
-  const nitpick = await createInstance(overrides, logger);
-  running = await startStandalone(nitpick, { logger: silentLogger });
-  return { api: `${running.url}${BASE_PATH}`, nitpick };
+): Promise<{ api: string; holt: Holt }> {
+  const holt = await createInstance(overrides, logger);
+  running = await startStandalone(holt, { logger: silentLogger });
+  return { api: `${running.url}${BASE_PATH}`, holt };
 }
 
 const postJson = (url: string, body: unknown, headers: Record<string, string> = EXT_HEADERS) =>
@@ -165,13 +165,13 @@ describe("CORS and access control", () => {
   });
 
   it("refuses an actual (unpreflighted) request from a web page", async () => {
-    const { api, nitpick } = await startServer();
+    const { api, holt } = await startServer();
     const res = await fetch(`${api}/session/start`, {
       method: "POST",
       headers: { origin: "https://evil.example", [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
     });
     expect(res.status).toBe(403);
-    expect(nitpick.sessions.current).toBeNull();
+    expect(holt.sessions.current).toBeNull();
   });
 
   it("allows a configured extra origin", async () => {
@@ -248,7 +248,7 @@ describe("CORS and access control", () => {
 
 describe("media uploads", () => {
   it("rejects unsupported media types with 415", async () => {
-    const { api, nitpick } = await startServer();
+    const { api, holt } = await startServer();
     for (const type of ["text/plain", "text/html", "constructor", "__proto__"]) {
       const res = await fetch(`${api}/media`, {
         method: "POST",
@@ -258,7 +258,7 @@ describe("media uploads", () => {
       expect(res.status).toBe(415);
       expect(((await res.json()) as ErrorResponse).error.code).toBe("unsupported-media-type");
     }
-    expect(nitpick.sessions.current).toBeNull();
+    expect(holt.sessions.current).toBeNull();
   });
 
   it("rejects an unknown kind header with 400", async () => {
@@ -272,7 +272,7 @@ describe("media uploads", () => {
   });
 
   it("rejects an oversize upload by Content-Length with 413 before writing anything", async () => {
-    const { api, nitpick } = await startServer({ maxUploadBytes: 1024 });
+    const { api, holt } = await startServer({ maxUploadBytes: 1024 });
     const res = await fetch(`${api}/media`, {
       method: "POST",
       headers: { ...EXT_HEADERS, "content-type": "video/webm" },
@@ -280,11 +280,11 @@ describe("media uploads", () => {
     });
     expect(res.status).toBe(413);
     expect(((await res.json()) as ErrorResponse).error.code).toBe("payload-too-large");
-    expect(await mediaFiles(nitpick.config.outputDir)).toEqual([]);
+    expect(await mediaFiles(holt.config.outputDir)).toEqual([]);
   });
 
   it("rejects an oversize streamed (chunked) upload with 413 and deletes the partial file", async () => {
-    const { api, nitpick } = await startServer({ maxUploadBytes: 1024 });
+    const { api, holt } = await startServer({ maxUploadBytes: 1024 });
     const chunk = new Uint8Array(700);
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -302,17 +302,17 @@ describe("media uploads", () => {
     } as RequestInit);
     expect(res.status).toBe(413);
     // The session was auto-started (the stream had to be read to find out)...
-    expect(nitpick.sessions.current).not.toBeNull();
+    expect(holt.sessions.current).not.toBeNull();
     // ...but no partial file is left behind.
-    expect(await mediaFiles(nitpick.config.outputDir)).toEqual([]);
+    expect(await mediaFiles(holt.config.outputDir)).toEqual([]);
   });
 
   it("auto-starts a session on the first upload", async () => {
-    const { api, nitpick } = await startServer();
+    const { api, holt } = await startServer();
     const res = await uploadPng(api);
     expect(res.status).toBe(200);
     const body = (await res.json()) as MediaUploadResponse;
-    expect(body.session.id).toBe(nitpick.sessions.current?.id);
+    expect(body.session.id).toBe(holt.sessions.current?.id);
     expect(body.file).toBe("001-screenshot.png");
   });
 });
@@ -371,7 +371,7 @@ describe("entries", () => {
 
 describe("happy path", () => {
   it("start -> upload -> entries -> status -> stop, and notes.md has it all", async () => {
-    const { api, nitpick } = await startServer();
+    const { api, holt } = await startServer();
 
     const started = (await (await postJson(`${api}/session/start`, { title: "Checkout pass" })).json()) as SessionResponse;
     expect(started.session?.entryCount).toBe(0);
@@ -403,7 +403,7 @@ describe("happy path", () => {
     const status = (await (await fetch(`${api}/status`, { headers: EXT_HEADERS })).json()) as StatusResponse;
     expect(status).toMatchObject({
       ok: true,
-      name: "nitpick",
+      name: "holt",
       version: VERSION,
       project: { name: path.basename(tempDir ?? ""), source: "directory" },
       session: { id: started.session?.id, entryCount: 2 },
@@ -412,7 +412,7 @@ describe("happy path", () => {
 
     const stopped = (await (await postJson(`${api}/session/stop`, {})).json()) as SessionResponse;
     expect(stopped.session?.endedAt).toBeDefined();
-    expect(nitpick.sessions.current).toBeNull();
+    expect(holt.sessions.current).toBeNull();
 
     const dir = started.session?.dir ?? "";
     expect(await readFile(path.join(dir, "001-screenshot.png"))).toEqual(PNG_BYTES);
@@ -430,8 +430,8 @@ describe("happy path", () => {
 
   it("reports the project from projectName, and the standalone banner names it", async () => {
     const logger = spyLogger();
-    const nitpick = await createInstance({ projectName: "Checkout app" });
-    running = await startStandalone(nitpick, { logger });
+    const holt = await createInstance({ projectName: "Checkout app" });
+    running = await startStandalone(holt, { logger });
     const status = (await (await fetch(`${running.url}${BASE_PATH}/status`, { headers: EXT_HEADERS })).json()) as StatusResponse;
     expect(status.project).toEqual({ name: "Checkout app", source: "config" });
     const banner = logger.info.mock.calls.map((c) => String(c[0]));
@@ -448,12 +448,12 @@ describe("happy path", () => {
 
 describe("uploads racing with session changes", () => {
   it("answers 409 and deletes the file when a new session starts mid-upload", async () => {
-    const { api, nitpick } = await startServer();
+    const { api, holt } = await startServer();
     const upload = manualUpload(api, { "content-type": "video/webm", [KIND_HEADER]: "recording" });
     await upload.write(new Uint8Array(100));
     // The upload has reserved its file name (and auto-started a session).
-    await vi.waitFor(() => expect(nitpick.sessions.current).not.toBeNull());
-    const oldSession = nitpick.sessions.current!;
+    await vi.waitFor(() => expect(holt.sessions.current).not.toBeNull());
+    const oldSession = holt.sessions.current!;
 
     const restart = await postJson(`${api}/session/start`, {});
     expect(restart.status).toBe(200);
@@ -488,23 +488,23 @@ describe("limits and disconnects", () => {
 
   it("logs a client hanging up mid-upload as a one-line info message, and removes the partial file", async () => {
     const logger = spyLogger();
-    const { api, nitpick } = await startServer({}, logger);
+    const { api, holt } = await startServer({}, logger);
     const upload = manualUpload(api, { "content-type": "video/webm", "content-length": "100000" });
     await upload.write(new Uint8Array(1000));
-    await vi.waitFor(async () => expect(await mediaFiles(nitpick.config.outputDir)).toHaveLength(1));
+    await vi.waitFor(async () => expect(await mediaFiles(holt.config.outputDir)).toHaveLength(1));
 
     upload.abort();
     await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith(expect.stringMatching(/client disconnected mid-request/)));
     const line = String(logger.info.mock.calls.find((c) => String(c[0]).includes("disconnected"))?.[0]);
     expect(line).not.toContain("\n");
     expect(logger.error).not.toHaveBeenCalled();
-    await vi.waitFor(async () => expect(await mediaFiles(nitpick.config.outputDir)).toEqual([]));
+    await vi.waitFor(async () => expect(await mediaFiles(holt.config.outputDir)).toEqual([]));
   });
 
   it("still logs genuinely unexpected errors with a stack trace", async () => {
     const logger = spyLogger();
-    const { api, nitpick } = await startServer({}, logger);
-    vi.spyOn(nitpick.sessions, "start").mockRejectedValueOnce(new Error("disk on fire"));
+    const { api, holt } = await startServer({}, logger);
+    vi.spyOn(holt.sessions, "start").mockRejectedValueOnce(new Error("disk on fire"));
     const res = await postJson(`${api}/session/start`, {});
     expect(res.status).toBe(500);
     expect(((await res.json()) as ErrorResponse).error.message).not.toContain("disk on fire");
@@ -514,8 +514,8 @@ describe("limits and disconnects", () => {
 
 describe("requests from other machines", () => {
   it("refuses to start the standalone server on a non-loopback host without a token", async () => {
-    const nitpick = await createInstance({ host: "0.0.0.0" });
-    await expect(startStandalone(nitpick, { logger: silentLogger })).rejects.toThrow(
+    const holt = await createInstance({ host: "0.0.0.0" });
+    await expect(startStandalone(holt, { logger: silentLogger })).rejects.toThrow(
       /Refusing to listen on "0\.0\.0\.0" without a token[\s\S]*Set "token"/,
     );
   });
@@ -526,8 +526,8 @@ describe("requests from other machines", () => {
     // standalone server refuses this config outright, so mount the handler
     // on a plain server, as an embedding app might.)
     const lan = lanAddress as string;
-    const nitpick = await createInstance({ host: lan });
-    extraServer = http.createServer((req, res) => void nitpick.handler(req, res));
+    const holt = await createInstance({ host: lan });
+    extraServer = http.createServer((req, res) => void holt.handler(req, res));
     await new Promise<void>((resolve) => extraServer?.listen(0, lan, resolve));
     const { port } = extraServer.address() as { port: number };
     const forged = await rawRequest(`http://${lan}:${port}${BASE_PATH}/status`, {
@@ -549,10 +549,10 @@ describe("requests from other machines", () => {
 
 describe("handler fall-through", () => {
   it("returns false (and writes nothing) for paths outside the base path", async () => {
-    const nitpick = await createInstance();
+    const holt = await createInstance();
     const results: boolean[] = [];
     extraServer = http.createServer((req, res) => {
-      void nitpick.handler(req, res).then((handled) => {
+      void holt.handler(req, res).then((handled) => {
         results.push(handled);
         if (!handled) {
           res.statusCode = 418;
@@ -564,7 +564,7 @@ describe("handler fall-through", () => {
     const { port } = extraServer.address() as { port: number };
     const origin = `http://127.0.0.1:${port}`;
 
-    for (const p of ["/", "/app/page", "/__nitpickx/status", `${BASE_PATH}/../status`]) {
+    for (const p of ["/", "/app/page", "/__holtx/status", `${BASE_PATH}/../status`]) {
       const res = await fetch(`${origin}${p}`, { headers: EXT_HEADERS });
       expect(res.status, p).toBe(418);
     }

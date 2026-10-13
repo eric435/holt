@@ -1,5 +1,5 @@
 /**
- * Client for the nitpick server's HTTP API (see @nitpick/protocol http.ts).
+ * Client for the holt server's HTTP API (see @holt/protocol http.ts).
  *
  * Used by every context that creates entries: the service worker
  * (screenshots), the offscreen document (tab recordings, voice notes), the
@@ -32,7 +32,7 @@ import {
   type SessionResponse,
   type StartSessionRequest,
   type StatusResponse,
-} from "@nitpick/protocol";
+} from "@holt/protocol";
 import { loadSettings } from "./settings.js";
 
 export interface ApiConfig {
@@ -63,8 +63,8 @@ export class ApiError extends Error {
 /** Hint shown whenever the server cannot be reached. */
 export function unreachableMessage(serverUrl: string): string {
   return (
-    `Can't reach the nitpick server at ${serverUrl}. ` +
-    "Start it with `npx nitpick-notes` in your project, or add the nitpick Vite plugin " +
+    `Can't reach the holt server at ${serverUrl}. ` +
+    "Start it with `npx holt` in your project, or add the holt Vite plugin " +
     "and set the server URL to your dev server (Settings)."
   );
 }
@@ -107,7 +107,7 @@ export function createApi(config: ApiConfig): Api {
       const timedOut = error instanceof DOMException && error.name === "TimeoutError";
       throw new ApiError(
         "unreachable",
-        timedOut ? `The nitpick server at ${config.serverUrl} did not answer in time.` : unreachableMessage(config.serverUrl),
+        timedOut ? `The holt server at ${config.serverUrl} did not answer in time.` : unreachableMessage(config.serverUrl),
       );
     }
 
@@ -117,7 +117,7 @@ export function createApi(config: ApiConfig): Api {
     } catch {
       throw new ApiError(
         "bad-response",
-        `Unexpected response from ${config.serverUrl}${BASE_PATH}${path} (HTTP ${response.status}). Is the server URL pointing at nitpick?`,
+        `Unexpected response from ${config.serverUrl}${BASE_PATH}${path} (HTTP ${response.status}). Is the server URL pointing at holt?`,
         response.status,
       );
     }
@@ -125,12 +125,12 @@ export function createApi(config: ApiConfig): Api {
     if (isErrorBody(body)) {
       const hint =
         body.error.code === "forbidden"
-          ? " Check that the token in Settings matches the server's nitpick.config.json."
+          ? " Check that the token in Settings matches the server's holt.config.json."
           : "";
       throw new ApiError(body.error.code, body.error.message + hint, response.status);
     }
     if (!response.ok || !isOkBody(body)) {
-      throw new ApiError("bad-response", `Unexpected response from nitpick (HTTP ${response.status}).`, response.status);
+      throw new ApiError("bad-response", `Unexpected response from holt (HTTP ${response.status}).`, response.status);
     }
     return body as T;
   }

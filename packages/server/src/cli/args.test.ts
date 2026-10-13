@@ -36,7 +36,7 @@ describe("parseCliArgs", () => {
     [["--port", "abc"], /--port must be a number/],
     [["serve"], /Unknown command: serve/],
     [["init", "extra"], /Unexpected argument/],
-    [["--force"], /only applies to `nitpick init`/],
+    [["--force"], /only applies to `holt init`/],
   ])("rejects %j", (argv, message) => {
     expect(() => parseCliArgs(argv)).toThrow(CliUsageError);
     expect(() => parseCliArgs(argv)).toThrow(message);
@@ -45,7 +45,7 @@ describe("parseCliArgs", () => {
 
 describe("writeStarterConfig", () => {
   it("writes a valid config with $schema, and refuses to overwrite without force", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "nitpick-init-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "holt-init-"));
     try {
       const file = await writeStarterConfig(dir, false);
       const written = JSON.parse(await readFile(file, "utf8")) as unknown;

@@ -50,7 +50,7 @@ export async function refreshIndicator(): Promise<void> {
     }
     await Promise.all(work);
   } catch (error) {
-    console.warn("[nitpick] could not update the toolbar indicator", error);
+    console.warn("[holt] could not update the toolbar indicator", error);
   }
 }
 

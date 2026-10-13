@@ -44,7 +44,7 @@ export interface Indicator {
 }
 
 export function indicatorFor({ recording, shortcuts, projectName, formatClock = clock }: IndicatorInput): Indicator {
-  const name = projectName ? `nitpick (${projectName})` : "nitpick";
+  const name = projectName ? `holt (${projectName})` : "holt";
   const parts: string[] = [];
 
   const { screen, voice } = recording;
