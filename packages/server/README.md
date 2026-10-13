@@ -69,6 +69,17 @@ extension at your dev server's URL (e.g. `http://localhost:5173`). The plugin
 does nothing during `vite build`. Options are the same keys as the config file
 (`port` is ignored; Vite owns the port), plus `configFile`.
 
+The plugin also stops Vite from serving the output directory: with the
+default `outputDir: "qa"` inside your project, Vite would otherwise serve
+every screenshot and `notes.md` at `/qa/...` to anything that can reach the
+dev server.
+
+**Requires Vite 5.4.12 or newer** (the `vite` peer dependency range is
+`>=5.4.12`). Earlier versions answer every dev-server request with
+`Access-Control-Allow-Origin: *`, so any web page you visit could read your
+app's source through the dev server. Vite is an optional peer: you only need
+it if you use `nitpick-notes/vite`.
+
 ### Programmatic
 
 ```ts
@@ -103,14 +114,25 @@ autocomplete.
 | --- | --- | --- | --- |
 | `outputDir` | string | `"qa"` | Where session folders go, relative to the project root. |
 | `port` | integer | `4848` | Standalone server port. Ignored by the Vite plugin. |
-| `host` | string | `"127.0.0.1"` | Interface to bind. Anything but loopback logs a warning. |
-| `token` | string \| null | `null` | Shared secret the extension must send (`x-nitpick-token`). |
+| `host` | string | `"127.0.0.1"` | Interface to bind. A non-loopback host requires a `token`. |
+| `token` | string \| null | `null` | Shared secret the extension must send (`x-nitpick-token`). Required for requests from other machines. |
 | `maxUploadBytes` | integer | `209715200` (200 MiB) | Size limit for one screenshot or recording. |
 | `sessionTitle` | string | `"QA session"` | H1 title for new sessions. |
-| `allowedOrigins` | string[] | `[]` | Extra exact web origins allowed to call the API. Extension origins are always allowed. |
+| `allowedOrigins` | string[] | `[]` | Extra exact web origins allowed to call the API. |
+| `allowedExtensionIds` | string[] | `[]` | Extension IDs allowed to call the API. Empty allows any `chrome-extension://` origin. |
 
 Invalid values stop the server with a message naming the key; unknown keys
-log a warning.
+log a warning. Every `allowedOrigins` and `allowedExtensionIds` entry, and a
+non-default `host`, is logged at startup.
+
+**Pinning the extension:** by default any installed Chrome extension may call
+the server. To allow only yours, copy its ID from `chrome://extensions` into
+`allowedExtensionIds` (`nitpick init` leaves this key out because the ID
+differs per install):
+
+```json
+{ "allowedExtensionIds": ["abcdefghijklmnopabcdefghijklmnop"] }
+```
 
 ## Output
 
@@ -153,16 +175,21 @@ was on screen). Delete that file if you want to commit sessions.
 The server writes files into your repo on request, so it is locked down by
 default:
 
-- Binds to `127.0.0.1`, and rejects requests whose `Host` is not a loopback
-  name (DNS rebinding).
-- Only `chrome-extension://` origins (plus any you list in `allowedOrigins`)
-  may call it. Every request needs an `x-nitpick-client` header, which forces
-  a CORS preflight that web pages fail. Requests with no `Origin` (curl) are
-  accepted from loopback only.
+- Binds to `127.0.0.1`. Requests from other machines are refused unless a
+  `token` is set, and the standalone server will not even start on a
+  non-loopback `host` without one.
+- Rejects requests whose `Host` is not a loopback name (DNS rebinding).
+- Only `chrome-extension://` origins (optionally pinned with
+  `allowedExtensionIds`, plus any you list in `allowedOrigins`) may call it.
+  Every request needs an `x-nitpick-client` header, which forces a CORS
+  preflight that web pages fail. Requests with no `Origin` are accepted only
+  from non-browser clients (curl) on this machine.
 - Optional shared `token`.
 - The server picks every file name; the extension never sends paths. Every
   write is checked to stay inside the session folder.
-- Upload and JSON body size limits; uploads stream to disk.
+- Upload and JSON body size limits; uploads stream to disk; at most 50
+  uploads may wait for their entry per session.
+- In Vite mode, the output directory is not served by the dev server.
 - Page titles, URLs and notes are escaped before they go into markdown.
 - No runtime dependencies.
 

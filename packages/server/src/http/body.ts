@@ -21,7 +21,7 @@ import { rm } from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { HttpError } from "./errors.js";
+import { ClientAbortError, HttpError } from "./errors.js";
 
 /** The media type from Content-Type, lowercased and without parameters. */
 export function mediaType(req: IncomingMessage): string | undefined {
@@ -87,14 +87,15 @@ function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
       cleanup();
       resolve(Buffer.concat(chunks));
     };
-    const onError = (err: Error): void => {
+    // A request stream only errors when its socket does, and 'close'
+    // without 'end' means the client hung up mid-body: both are aborts.
+    const onError = (): void => {
       cleanup();
-      reject(err);
+      reject(new ClientAbortError());
     };
     const onClose = (): void => {
-      // 'close' without 'end' means the client hung up mid-body.
       cleanup();
-      reject(new HttpError(400, "bad-request", "Request body was aborted"));
+      reject(new ClientAbortError());
     };
 
     req.on("data", onData);
@@ -132,11 +133,11 @@ export async function streamToFile(req: IncomingMessage, filePath: string, limit
 
   // `req.pipe` does not forward errors or aborts, so do it by hand;
   // otherwise a client disconnect would leave the pipeline waiting forever.
-  const onReqError = (err: Error): void => {
-    limiter.destroy(err);
+  const onReqError = (): void => {
+    limiter.destroy(new ClientAbortError());
   };
   const onReqClose = (): void => {
-    if (!req.complete) limiter.destroy(new HttpError(400, "bad-request", "Upload was aborted"));
+    if (!req.complete) limiter.destroy(new ClientAbortError());
   };
   req.once("error", onReqError);
   req.once("close", onReqClose);

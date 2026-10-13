@@ -39,13 +39,28 @@ async function configure(plugin: Plugin, server: ViteDevServer): Promise<void> {
   await fn?.call({} as never, server);
 }
 
-/** Serve the mounted middleware on a real port, with a 418 "app" fallback. */
-async function serveMiddleware(middleware: Connect.NextHandleFunction): Promise<string> {
+const EXT_HEADERS = {
+  origin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+  [CLIENT_HEADER]: CLIENT_HEADER_VALUE,
+};
+
+/**
+ * Serve every mounted middleware, in order, on a real port, like connect
+ * would, with a 418 "app" fallback standing in for the rest of Vite.
+ */
+async function serveMiddlewares(use: ReturnType<typeof vi.fn>): Promise<string> {
+  const stack = use.mock.calls.map((call) => call[0] as Connect.NextHandleFunction);
   appServer = http.createServer((req, res) => {
-    middleware(req, res, () => {
-      res.statusCode = 418;
-      res.end("app");
-    });
+    const run = (i: number): void => {
+      const middleware = stack[i];
+      if (!middleware) {
+        res.statusCode = 418;
+        res.end("app");
+        return;
+      }
+      middleware(req, res, () => run(i + 1));
+    };
+    run(0);
   });
   await new Promise<void>((resolve) => appServer?.listen(0, "127.0.0.1", resolve));
   return `http://127.0.0.1:${(appServer.address() as { port: number }).port}`;
@@ -58,26 +73,26 @@ describe("nitpick() Vite plugin", () => {
     expect(plugin.apply).toBe("serve");
   });
 
-  it("mounts one middleware that handles /__nitpick and falls through for everything else", async () => {
+  it("mounts middlewares that handle /__nitpick and fall through for everything else", async () => {
     const { server, use } = stubServer();
     await configure(nitpick(), server);
-    expect(use).toHaveBeenCalledTimes(1);
+    expect(use).toHaveBeenCalledTimes(2); // output-dir guard + API handler
 
-    const origin = await serveMiddleware(use.mock.calls[0]?.[0] as Connect.NextHandleFunction);
+    const origin = await serveMiddlewares(use);
     const app = await fetch(`${origin}/src/main.ts`);
     expect(app.status).toBe(418);
-    const status = await fetch(`${origin}${BASE_PATH}/status`, { headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE } });
+    const status = await fetch(`${origin}${BASE_PATH}/status`, { headers: EXT_HEADERS });
     expect(status.status).toBe(200);
   });
 
   it("resolves outputDir against the Vite root and passes options through", async () => {
     const { server, use } = stubServer();
     await configure(nitpick({ outputDir: "notes", sessionTitle: "Vite QA" }), server);
-    const origin = await serveMiddleware(use.mock.calls[0]?.[0] as Connect.NextHandleFunction);
+    const origin = await serveMiddlewares(use);
 
     const res = await fetch(`${origin}${BASE_PATH}/session/start`, {
       method: "POST",
-      headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
+      headers: EXT_HEADERS,
     });
     const { session } = (await res.json()) as SessionResponse;
     expect(session?.dir.startsWith(path.join(root, "notes"))).toBe(true);
@@ -99,11 +114,11 @@ describe("nitpick() Vite plugin", () => {
   it("ends the active session when the dev server closes", async () => {
     const { server, use, httpServer } = stubServer();
     await configure(nitpick(), server);
-    const origin = await serveMiddleware(use.mock.calls[0]?.[0] as Connect.NextHandleFunction);
+    const origin = await serveMiddlewares(use);
 
     const res = await fetch(`${origin}${BASE_PATH}/session/start`, {
       method: "POST",
-      headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
+      headers: EXT_HEADERS,
     });
     const { session } = (await res.json()) as SessionResponse;
     const notesPath = path.join(session?.dir ?? "", "notes.md");
@@ -119,11 +134,11 @@ describe("nitpick() Vite plugin", () => {
     const { server, use } = stubServer(null);
     const plugin = nitpick();
     await configure(plugin, server);
-    const origin = await serveMiddleware(use.mock.calls[0]?.[0] as Connect.NextHandleFunction);
+    const origin = await serveMiddlewares(use);
 
     const res = await fetch(`${origin}${BASE_PATH}/session/start`, {
       method: "POST",
-      headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
+      headers: EXT_HEADERS,
     });
     const { session } = (await res.json()) as SessionResponse;
 
@@ -137,7 +152,43 @@ describe("nitpick() Vite plugin", () => {
   it("works in middleware mode (no httpServer)", async () => {
     const { server, use } = stubServer(null);
     await configure(nitpick(), server);
-    expect(use).toHaveBeenCalledTimes(1);
+    expect(use).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let Vite serve the output directory", async () => {
+    const { server, use } = stubServer();
+    await configure(nitpick(), server);
+    const origin = await serveMiddlewares(use);
+
+    const start = await fetch(`${origin}${BASE_PATH}/session/start`, { method: "POST", headers: EXT_HEADERS });
+    const { session } = (await start.json()) as SessionResponse;
+    const id = session?.id ?? "";
+
+    for (const p of [`/qa/${id}/notes.md`, `/qa/.gitignore`, `//qa/${id}/notes.md`, `/%71a/${id}/notes.md`, `/QA/${id}/notes.md?raw`]) {
+      const res = await fetch(`${origin}${p}`);
+      expect(res.status, p).toBe(404);
+    }
+    // Everything else still reaches Vite.
+    expect((await fetch(`${origin}/qa-notes.html`)).status).toBe(418);
+    expect((await fetch(`${origin}/src/qa/x.ts`)).status).toBe(418);
+  });
+
+  it("warns when Vite listens on a non-loopback address without a token", async () => {
+    const lanServer = Object.assign(new EventEmitter(), {
+      address: () => ({ address: "0.0.0.0", family: "IPv4", port: 5173 }),
+    });
+    const { server, logger } = stubServer(lanServer);
+    await configure(nitpick(), server);
+    lanServer.emit("listening");
+    expect(logger.warn.mock.calls.map((c) => String(c[0])).join("\n")).toMatch(/0\.0\.0\.0, which other machines can reach/);
+
+    // With a token: no warning.
+    const second = stubServer(
+      Object.assign(new EventEmitter(), { address: () => ({ address: "0.0.0.0", family: "IPv4", port: 5173 }) }),
+    );
+    await configure(nitpick({ token: "secret" }), second.server);
+    second.httpServer?.emit("listening");
+    expect(second.logger.warn).not.toHaveBeenCalled();
   });
 
   it("rejects invalid options with a clear error", async () => {

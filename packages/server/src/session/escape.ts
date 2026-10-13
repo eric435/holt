@@ -16,16 +16,30 @@
  *    at line start, blockquotes.
  *  - Leading `#` on a line: would start a heading, letting a note fake a new
  *    "## 7. Screenshot" entry.
+ *  - Leading ``` or ~~~: would open a code fence that never closes,
+ *    swallowing every later entry into one code block. Escaping the first
+ *    character is enough; inline code spans elsewhere stay usable.
+ *  - A line made only of `=`, `-`, `*`, `_` and spaces: depending on
+ *    context it turns the line above into a heading (`===`, `---`) or draws
+ *    a horizontal rule (`***`, `- - -`). The first such character is
+ *    escaped. A list item like `- buy milk` has other text and is left alone.
  *  - Backslash itself, first, so input like `\]` cannot cancel our escape.
+ *
+ * Invisible and bidirectional-override characters (U+200B-200F, U+202A-202E,
+ * U+2066-2069, U+FEFF) are removed: they can make text display differently
+ * from what it contains ("Trojan Source"), e.g. a URL that reads one way and
+ * points another. Removing U+200D (zero-width joiner) also splits combined
+ * emoji like family emoji into their parts; an acceptable cost.
  * Emphasis characters (`*`, `_`) are left alone: the worst they can do is
  * make text bold, and escaping them makes notes much harder to read raw.
  *
  * URLs used as link *destinations* are handled separately by `safeUrl`.
  */
 
-// C0 control characters except tab and newline, plus DEL. They have no
+// C0 control characters except tab and newline, plus DEL: they have no
 // business in notes and can corrupt terminals or editors that display them.
-const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
+// Plus the invisible/bidi characters described above.
+const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
 const SPECIAL = /[\\[\]<>]/g;
 
 /** Escape text that must stay on one line (titles, link text). Newlines become spaces. */
@@ -76,7 +90,9 @@ function escapeLine(line: string): string {
   return line
     .replace(CONTROL_CHARS, "")
     .replace(SPECIAL, (c) => `\\${c}`)
-    .replace(/^(\s*)#/, "$1\\#");
+    .replace(/^(\s*)#/, "$1\\#")
+    .replace(/^(\s*)(```|~~~)/, "$1\\$2")
+    .replace(/^(\s*)([=*_-])([=*_ \t-]*)$/, "$1\\$2$3");
 }
 
 function splitLines(text: string): string[] {

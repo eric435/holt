@@ -110,15 +110,18 @@ async function uploadMedia(req: IncomingMessage, { config, sessions }: RouteCont
   try {
     bytes = await streamToFile(req, media.path, config.maxUploadBytes);
   } catch (err) {
-    sessions.releaseMedia(media.file);
+    sessions.releaseMedia(media);
     throw err;
   }
   if (bytes === 0) {
-    sessions.releaseMedia(media.file);
+    sessions.releaseMedia(media);
     await rm(media.path, { force: true });
     throw new HttpError(400, "bad-request", "Upload body is empty");
   }
-  return { ok: true, file: media.file, bytes, session: sessions.current ?? media.session };
+  // The upload streamed outside the store's lock; make sure its session is
+  // still the active one (throws 409 "conflict" and deletes the file if not).
+  const session = await sessions.finishMedia(media);
+  return { ok: true, file: media.file, bytes, session };
 }
 
 async function addEntry(req: IncomingMessage, { sessions }: RouteContext): Promise<EntryResponse> {

@@ -167,7 +167,8 @@ Two MV3 details that shaped the code and are worth knowing:
 
 Permissions are the minimum: `activeTab` (granted by a hotkey or clicking the
 icon, scoped to that tab, no host permissions), `sidePanel`, `scripting`,
-`storage`, `commands`. Network access to the local server uses
+and `storage`. Keyboard shortcuts come from the `commands` manifest key,
+which is not a permission. Network access to the local server uses
 `host_permissions` for `http://127.0.0.1/*` and `http://localhost/*` only.
 
 Message flow for a full-page screenshot, as an example:

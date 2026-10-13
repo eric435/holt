@@ -25,6 +25,12 @@ export interface NitpickConfig {
    * call the API, e.g. "http://localhost:3000". Exact origins only, no wildcards.
    */
   allowedOrigins?: string[];
+  /**
+   * Chrome extension IDs (32 letters a-p) allowed to call the API. Empty
+   * (the default) allows any chrome-extension:// origin; set this to pin
+   * nitpick to your installed copy of the extension.
+   */
+  allowedExtensionIds?: string[];
 }
 
 export interface ResolvedConfig {
@@ -38,6 +44,7 @@ export interface ResolvedConfig {
   maxUploadBytes: number;
   sessionTitle: string;
   allowedOrigins: string[];
+  allowedExtensionIds: string[];
   /** Absolute path of the config file that was loaded, or null if none. */
   configFile: string | null;
 }

@@ -40,6 +40,56 @@ describe("escapeBlock", () => {
   });
 });
 
+describe("escapeBlock: block-level constructs", () => {
+  it("escapes the first character of a leading code fence", () => {
+    expect(escapeBlock("~~~")).toBe("\\~~~");
+    expect(escapeBlock("  ~~~~ js")).toBe("  \\~~~~ js");
+    expect(escapeBlock("```js")).toBe("\\```js");
+    expect(escapeBlock(" ````")).toBe(" \\````");
+    expect(escapeBlock("use `code` here")).toBe("use `code` here");
+    expect(escapeBlock("not ~~~ a fence")).toBe("not ~~~ a fence");
+  });
+
+  it.each([
+    ["===", "\\==="],
+    ["---", "\\---"],
+    ["***", "\\***"],
+    ["___", "\\___"],
+    ["- - -", "\\- - -"],
+    ["  * * *  ", "  \\* * *  "],
+    ["-", "\\-"],
+    ["=-=", "\\=-="],
+  ])("escapes setext underline / thematic break %j", (input, expected) => {
+    expect(escapeBlock(input)).toBe(expected);
+  });
+
+  it("does not let a note turn its previous line into a heading", () => {
+    expect(escapeBlock("Fake heading\n===")).toBe("Fake heading\n\\===");
+  });
+
+  it.each(["- buy milk", "* item", "1. first", "-- dashes in text", "a - b", "x_y_z", "**bold**"])(
+    "leaves ordinary text and lists alone: %j",
+    (line) => {
+      expect(escapeBlock(line)).toBe(line);
+    },
+  );
+});
+
+describe("invisible and bidi characters", () => {
+  it.each(["\u202e", "\u202a", "\u2066", "\u2069", "\u200b", "\u200d", "\u200f", "\ufeff"])(
+    "strips U+%s from inline and block text",
+    (ch) => {
+      expect(escapeInline(`a${ch}b`)).toBe("ab");
+      expect(escapeBlock(`a${ch}b\nc${ch}`)).toBe("ab\nc");
+      expect(blockquote(`a${ch}b`)).toBe("> ab");
+    },
+  );
+
+  it("strips a right-to-left override that would disguise a URL", () => {
+    expect(escapeInline("http://good.example/\u202Egpj.exe")).toBe("http://good.example/gpj.exe");
+  });
+});
+
 describe("blockquote", () => {
   it("prefixes every line, including blank ones, so the quote cannot be escaped", () => {
     expect(blockquote("first\n\n## 2. Note · fake\n![x](http://evil)")).toBe(

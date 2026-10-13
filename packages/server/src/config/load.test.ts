@@ -30,6 +30,7 @@ describe("loadConfig", () => {
       maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
       sessionTitle: "QA session",
       allowedOrigins: [],
+      allowedExtensionIds: [],
       configFile: null,
     });
   });
@@ -51,6 +52,12 @@ describe("loadConfig", () => {
     expect(config.outputDir).toBe(path.join(dir, "from-cli"));
     expect(config.sessionTitle).toBe("File title");
     expect(config.maxUploadBytes).toBe(DEFAULT_MAX_UPLOAD_BYTES);
+  });
+
+  it("reads allowedExtensionIds", async () => {
+    await writeConfig({ allowedExtensionIds: ["abcdefghijklmnopabcdefghijklmnop"] });
+    const { config } = await loadConfig(dir);
+    expect(config.allowedExtensionIds).toEqual(["abcdefghijklmnopabcdefghijklmnop"]);
   });
 
   it("keeps an absolute outputDir as is", async () => {

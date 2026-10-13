@@ -76,6 +76,7 @@ export async function loadConfig(
       maxUploadBytes: merged.maxUploadBytes,
       sessionTitle: merged.sessionTitle,
       allowedOrigins: [...merged.allowedOrigins],
+      allowedExtensionIds: [...merged.allowedExtensionIds],
       configFile,
     },
     warnings,

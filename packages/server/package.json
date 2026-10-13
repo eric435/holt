@@ -47,16 +47,18 @@
   "files": [
     "dist",
     "schema.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "node scripts/copy-license.mjs && tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check-pack": "node scripts/check-pack.mjs"
   },
   "peerDependencies": {
-    "vite": ">=5.0.0"
+    "vite": ">=5.4.12"
   },
   "peerDependenciesMeta": {
     "vite": {
@@ -65,7 +67,7 @@
   },
   "devDependencies": {
     "@nitpick/protocol": "workspace:*",
-    "vite": "^5.4.11"
+    "vite": "^5.4.21"
   },
   "publishConfig": {
     "access": "public",

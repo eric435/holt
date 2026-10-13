@@ -83,6 +83,22 @@ function checkOrigin(item: unknown): string | null {
   return null;
 }
 
+/** Chrome extension IDs are 32 characters from a to p. */
+export const EXTENSION_ID = /^[a-p]{32}$/;
+
+const extensionIdList: Check = (v) => {
+  if (!Array.isArray(v)) return `must be an array of extension ID strings (got ${describe(v)})`;
+  for (const item of v) {
+    if (typeof item !== "string" || !EXTENSION_ID.test(item)) {
+      return (
+        `must contain Chrome extension IDs: 32 lowercase letters a-p, as shown on ` +
+        `chrome://extensions (got ${typeof item === "string" ? JSON.stringify(item) : describe(item)})`
+      );
+    }
+  }
+  return null;
+};
+
 const CHECKS: Record<keyof NitpickConfig, Check> = {
   outputDir: nonEmptyString,
   port: portNumber,
@@ -91,6 +107,7 @@ const CHECKS: Record<keyof NitpickConfig, Check> = {
   maxUploadBytes: positiveInteger,
   sessionTitle: nonEmptyString,
   allowedOrigins: originList,
+  allowedExtensionIds: extensionIdList,
 };
 
 /** Keys that may appear in the file but are not config (editor hints). */

@@ -4,7 +4,7 @@
  */
 import http from "node:http";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
 import {
   BASE_PATH,
@@ -18,11 +18,12 @@ import {
   type SessionResponse,
   type StatusResponse,
 } from "@nitpick/protocol";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { startStandalone, type StandaloneServer } from "../adapters/standalone.js";
 import type { NitpickConfig } from "../config/types.js";
 import { createNitpick, type Nitpick } from "../core.js";
-import { silentLogger } from "../log.js";
+import { MAX_PENDING_UPLOADS } from "../config/defaults.js";
+import { silentLogger, type Logger } from "../log.js";
 import { VERSION } from "../version.js";
 
 const EXT_ORIGIN = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
@@ -41,14 +42,17 @@ afterEach(async () => {
   running = extraServer = tempDir = undefined;
 });
 
-async function createInstance(overrides: NitpickConfig = {}): Promise<Nitpick> {
+async function createInstance(overrides: NitpickConfig = {}, logger: Logger = silentLogger): Promise<Nitpick> {
   tempDir = await mkdtemp(path.join(tmpdir(), "nitpick-http-"));
-  return createNitpick({ cwd: tempDir, overrides: { port: 0, ...overrides }, logger: silentLogger });
+  return createNitpick({ cwd: tempDir, overrides: { port: 0, ...overrides }, logger });
 }
 
 /** Start a standalone server and return the API base URL. */
-async function startServer(overrides: NitpickConfig = {}): Promise<{ api: string; nitpick: Nitpick }> {
-  const nitpick = await createInstance(overrides);
+async function startServer(
+  overrides: NitpickConfig = {},
+  logger: Logger = silentLogger,
+): Promise<{ api: string; nitpick: Nitpick }> {
+  const nitpick = await createInstance(overrides, logger);
   running = await startStandalone(nitpick, { logger: silentLogger });
   return { api: `${running.url}${BASE_PATH}`, nitpick };
 }
@@ -62,6 +66,59 @@ const uploadPng = (api: string, headers: Record<string, string> = EXT_HEADERS) =
     headers: { ...headers, "content-type": "image/png", [KIND_HEADER]: "screenshot" },
     body: PNG_BYTES,
   });
+
+const spyLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+/**
+ * Start a streaming upload whose body we control by hand: `write` sends
+ * bytes, `end` finishes it, `abort` hangs up, `response` resolves when the
+ * server answers.
+ */
+function manualUpload(api: string, headers: Record<string, string>) {
+  const u = new URL(`${api}/media`);
+  let resolveResponse!: (r: { status: number | undefined; body: string }) => void;
+  const response = new Promise<{ status: number | undefined; body: string }>((resolve) => (resolveResponse = resolve));
+  const req = http.request(
+    { host: u.hostname, port: u.port, path: u.pathname, method: "POST", headers: { ...EXT_HEADERS, ...headers } },
+    (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => (body += chunk));
+      res.on("end", () => resolveResponse({ status: res.statusCode, body }));
+    },
+  );
+  req.on("error", () => undefined); // expected when we abort
+  return {
+    write: (bytes: Uint8Array) => new Promise<void>((resolve) => req.write(bytes, () => resolve())),
+    end: () => req.end(),
+    abort: () => req.destroy(),
+    response,
+  };
+}
+
+/** A non-internal IPv4 address of this machine, if it has one (for real non-loopback sockets). */
+const lanAddress = Object.values(networkInterfaces())
+  .flat()
+  .find((iface) => iface && iface.family === "IPv4" && !iface.internal)?.address;
+
+/** A request with exactly these headers (fetch adds its own, e.g. Sec-Fetch-Mode). */
+function rawRequest(
+  url: string,
+  headers: Record<string, string>,
+  method = "GET",
+): Promise<{ status: number | undefined; body: string }> {
+  const u = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: u.hostname, port: u.port, path: u.pathname, method, headers }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => (body += chunk));
+      res.on("end", () => resolve({ status: res.statusCode, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
 
 /** All media files under the output dir (ignores notes.md and .gitignore). */
 async function mediaFiles(outputDir: string): Promise<string[]> {
@@ -135,27 +192,46 @@ describe("CORS and access control", () => {
     expect(body).toEqual({ ok: false, error: { code: "forbidden", message: expect.stringContaining(CLIENT_HEADER) } });
   });
 
-  it("allows curl-style requests (no Origin) from loopback", async () => {
+  it("allows curl-style requests (no Origin, no Sec-Fetch-*) from loopback", async () => {
     const { api } = await startServer();
-    const res = await fetch(`${api}/status`, { headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE } });
+    // node:http sends only the headers we give it, like curl.
+    const res = await rawRequest(`${api}/status`, { [CLIENT_HEADER]: CLIENT_HEADER_VALUE });
     expect(res.status).toBe(200);
+  });
+
+  it("refuses no-Origin requests that carry Sec-Fetch-* headers (same-origin script in a browser)", async () => {
+    const { api } = await startServer();
+    const res = await rawRequest(`${api}/status`, {
+      [CLIENT_HEADER]: CLIENT_HEADER_VALUE,
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "cors",
+    });
+    expect(res.status).toBe(403);
+    // The extension's own GETs: no Origin, but Sec-Fetch-Site: none.
+    const extensionGet = await rawRequest(`${api}/status`, {
+      [CLIENT_HEADER]: CLIENT_HEADER_VALUE,
+      "sec-fetch-site": "none",
+      "sec-fetch-mode": "cors",
+    });
+    expect(extensionGet.status).toBe(200);
+    // Node's own fetch sends Sec-Fetch-Mode (without Site), so it counts as a page.
+    const viaFetch = await fetch(`${api}/status`, { headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE } });
+    expect(viaFetch.status).toBe(403);
+  });
+
+  it("only allows pinned extensions when allowedExtensionIds is set", async () => {
+    const { api } = await startServer({ allowedExtensionIds: ["abcdefghijklmnopabcdefghijklmnop"] });
+    expect((await fetch(`${api}/status`, { headers: EXT_HEADERS })).status).toBe(200);
+    const other = await fetch(`${api}/status`, {
+      headers: { origin: "chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba", [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
+    });
+    expect(other.status).toBe(403);
   });
 
   it("rejects a non-loopback Host header (DNS rebinding)", async () => {
     const { api } = await startServer();
-    const url = new URL(`${api}/status`);
-    const status = await new Promise<number | undefined>((resolve, reject) => {
-      http
-        .get(
-          { host: url.hostname, port: url.port, path: url.pathname, headers: { host: "evil.example:4848", [CLIENT_HEADER]: CLIENT_HEADER_VALUE } },
-          (res) => {
-            res.resume();
-            resolve(res.statusCode);
-          },
-        )
-        .on("error", reject);
-    });
-    expect(status).toBe(403);
+    const res = await rawRequest(`${api}/status`, { host: "evil.example:4848", [CLIENT_HEADER]: CLIENT_HEADER_VALUE });
+    expect(res.status).toBe(403);
   });
 
   it("checks the token when one is configured", async () => {
@@ -356,6 +432,107 @@ describe("happy path", () => {
     const res = await fetch(`${api}/nope`, { headers: EXT_HEADERS });
     expect(res.status).toBe(404);
     expect(((await res.json()) as ErrorResponse).error.code).toBe("not-found");
+  });
+});
+
+describe("uploads racing with session changes", () => {
+  it("answers 409 and deletes the file when a new session starts mid-upload", async () => {
+    const { api, nitpick } = await startServer();
+    const upload = manualUpload(api, { "content-type": "video/webm", [KIND_HEADER]: "recording" });
+    await upload.write(new Uint8Array(100));
+    // The upload has reserved its file name (and auto-started a session).
+    await vi.waitFor(() => expect(nitpick.sessions.current).not.toBeNull());
+    const oldSession = nitpick.sessions.current!;
+
+    const restart = await postJson(`${api}/session/start`, {});
+    expect(restart.status).toBe(200);
+    await upload.write(new Uint8Array(100));
+    upload.end();
+
+    const res = await upload.response;
+    expect(res.status).toBe(409);
+    expect((JSON.parse(res.body) as ErrorResponse).error.code).toBe("conflict");
+    expect(await readdir(oldSession.dir)).toEqual(["notes.md"]);
+    // The new session is unaffected and numbers its own uploads from 1.
+    const next = (await (await uploadPng(api)).json()) as MediaUploadResponse;
+    expect(next.session.id).not.toBe(oldSession.id);
+    expect(next.file).toBe("001-screenshot.png");
+  });
+});
+
+describe("limits and disconnects", () => {
+  it(`caps uploads waiting for an entry at ${MAX_PENDING_UPLOADS} per session (429)`, async () => {
+    const { api } = await startServer();
+    for (let i = 0; i < MAX_PENDING_UPLOADS; i++) expect((await uploadPng(api)).status).toBe(200);
+    const res = await uploadPng(api);
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as ErrorResponse;
+    expect(body.error.code).toBe("too-many-requests");
+    expect(body.error.message).toMatch(/waiting for an entry/);
+
+    // Posting an entry for one of them frees a slot.
+    expect((await postJson(`${api}/entries`, screenshotEntry("001-screenshot.png"))).status).toBe(200);
+    expect((await uploadPng(api)).status).toBe(200);
+  });
+
+  it("logs a client hanging up mid-upload as a one-line info message, and removes the partial file", async () => {
+    const logger = spyLogger();
+    const { api, nitpick } = await startServer({}, logger);
+    const upload = manualUpload(api, { "content-type": "video/webm", "content-length": "100000" });
+    await upload.write(new Uint8Array(1000));
+    await vi.waitFor(async () => expect(await mediaFiles(nitpick.config.outputDir)).toHaveLength(1));
+
+    upload.abort();
+    await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith(expect.stringMatching(/client disconnected mid-request/)));
+    const line = String(logger.info.mock.calls.find((c) => String(c[0]).includes("disconnected"))?.[0]);
+    expect(line).not.toContain("\n");
+    expect(logger.error).not.toHaveBeenCalled();
+    await vi.waitFor(async () => expect(await mediaFiles(nitpick.config.outputDir)).toEqual([]));
+  });
+
+  it("still logs genuinely unexpected errors with a stack trace", async () => {
+    const logger = spyLogger();
+    const { api, nitpick } = await startServer({}, logger);
+    vi.spyOn(nitpick.sessions, "start").mockRejectedValueOnce(new Error("disk on fire"));
+    const res = await postJson(`${api}/session/start`, {});
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as ErrorResponse).error.message).not.toContain("disk on fire");
+    expect(String(logger.error.mock.calls[0]?.[0])).toMatch(/disk on fire[\s\S]*at /);
+  });
+});
+
+describe("requests from other machines", () => {
+  it("refuses to start the standalone server on a non-loopback host without a token", async () => {
+    const nitpick = await createInstance({ host: "0.0.0.0" });
+    await expect(startStandalone(nitpick, { logger: silentLogger })).rejects.toThrow(
+      /Refusing to listen on "0\.0\.0\.0" without a token[\s\S]*Set "token"/,
+    );
+  });
+
+  it.skipIf(!lanAddress)("rejects non-loopback sockets without a token, whatever the headers say", async () => {
+    // A real socket from a non-loopback address: bind to this machine's LAN
+    // address and connect to it. Headers are forged to look perfect. (The
+    // standalone server refuses this config outright, so mount the handler
+    // on a plain server, as an embedding app might.)
+    const lan = lanAddress as string;
+    const nitpick = await createInstance({ host: lan });
+    extraServer = http.createServer((req, res) => void nitpick.handler(req, res));
+    await new Promise<void>((resolve) => extraServer?.listen(0, lan, resolve));
+    const { port } = extraServer.address() as { port: number };
+    const forged = await rawRequest(`http://${lan}:${port}${BASE_PATH}/status`, {
+      host: `127.0.0.1:${port}`,
+      origin: EXT_ORIGIN,
+      [CLIENT_HEADER]: CLIENT_HEADER_VALUE,
+    });
+    expect(forged.status).toBe(403);
+    expect(forged.body).toMatch(/other machines/);
+  });
+
+  it.skipIf(!lanAddress)("accepts non-loopback sockets that present the token", async () => {
+    const { api } = await startServer({ host: lanAddress as string, token: "s3cret" });
+    const headers = { origin: EXT_ORIGIN, [CLIENT_HEADER]: CLIENT_HEADER_VALUE };
+    expect((await rawRequest(`${api}/status`, headers)).status).toBe(403);
+    expect((await rawRequest(`${api}/status`, { ...headers, [TOKEN_HEADER]: "s3cret" })).status).toBe(200);
   });
 });
 

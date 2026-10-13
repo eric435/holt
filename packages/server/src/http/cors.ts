@@ -7,14 +7,26 @@
  *
  * The checks, in the order the handler applies them:
  *
+ * 0. A request from another machine needs a token. Host and Origin are
+ *    just headers: a browser sets them honestly, but any other client can
+ *    forge them. The socket's remote address cannot be forged, so without a
+ *    token, only this machine may talk to us. (With a token, step 5 checks it.)
+ *
  * 1. Host header must name a loopback host (or the configured host).
  *    Defends against DNS rebinding: evil.example re-resolving to 127.0.0.1
  *    makes the attacker page *same-origin* with us, so no preflight and no
  *    Origin header on GETs. Its requests still say `Host: evil.example`.
  *
- * 2. Origin must be a `chrome-extension://` origin or listed in
- *    `allowedOrigins`. No Origin header at all (curl, scripts) is accepted
- *    only from a loopback socket, for local testing.
+ * 2. Origin must be a `chrome-extension://` origin (restricted to
+ *    `allowedExtensionIds` if set) or listed in `allowedOrigins`.
+ *    No Origin header at all is accepted only from a non-browser client on
+ *    a loopback socket (curl, scripts), for local testing, or with
+ *    `Sec-Fetch-Site: none` (the extension's own GETs; see hasFetchMetadata).
+ *    Page-initiated requests are told apart by their `Sec-Fetch-*` headers,
+ *    which browsers attach to every request and pages cannot remove. That
+ *    matters in Vite mode: a script on the app under test is same-origin
+ *    with /__nitpick, and browsers omit Origin on same-origin GETs, so
+ *    without this check it could read /status.
  *
  * 3. OPTIONS preflights are answered here, only for allowed origins.
  *
@@ -29,16 +41,30 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { CLIENT_HEADER, CLIENT_HEADER_VALUE, KIND_HEADER, TOKEN_HEADER } from "@nitpick/protocol";
 import type { ResolvedConfig } from "../config/types.js";
+import { EXTENSION_ID } from "../config/validate.js";
 import { HttpError } from "./errors.js";
 
-/** Chrome extension IDs are 32 characters from a to p. */
-const EXTENSION_ORIGIN = /^chrome-extension:\/\/[a-p]{32}$/;
 
 const ALLOWED_METHODS = "GET, POST, OPTIONS";
 const ALLOWED_HEADERS = ["content-type", CLIENT_HEADER, TOKEN_HEADER, KIND_HEADER].join(", ");
 
-export function isAllowedOrigin(origin: string, allowedOrigins: readonly string[]): boolean {
-  return EXTENSION_ORIGIN.test(origin) || allowedOrigins.includes(origin);
+const EXTENSION_SCHEME = "chrome-extension://";
+
+/**
+ * A chrome-extension origin is allowed if its ID is well-formed and, when
+ * `allowedExtensionIds` is set, listed there. Web origins must be listed in
+ * `allowedOrigins` exactly.
+ */
+export function isAllowedOrigin(
+  origin: string,
+  { allowedOrigins, allowedExtensionIds }: Pick<ResolvedConfig, "allowedOrigins" | "allowedExtensionIds">,
+): boolean {
+  if (origin.startsWith(EXTENSION_SCHEME)) {
+    const id = origin.slice(EXTENSION_SCHEME.length);
+    if (!EXTENSION_ID.test(id)) return false;
+    return allowedExtensionIds.length === 0 || allowedExtensionIds.includes(id);
+  }
+  return allowedOrigins.includes(origin);
 }
 
 /** True for a socket address on this machine: 127.0.0.0/8 or ::1 (also IPv4-mapped). */
@@ -82,22 +108,47 @@ function normalizeHostname(hostname: string): string {
 }
 
 /**
- * Steps 1 and 2. Returns the origin to echo in CORS headers (null for
+ * Steps 0 to 2. Returns the origin to echo in CORS headers (null for
  * same-machine requests without an Origin). Throws 403 otherwise.
  */
 export function checkOriginAndHost(req: IncomingMessage, config: ResolvedConfig): { origin: string | null } {
+  const local = isLoopbackAddress(req.socket.remoteAddress);
+  if (!local && config.token === null) {
+    throw new HttpError(
+      403,
+      "forbidden",
+      `Requests from other machines are refused unless a token is configured`,
+    );
+  }
   if (!isAllowedHost(req.headers.host, config.host)) {
     throw new HttpError(403, "forbidden", "Host header is not a loopback host");
   }
   const origin = req.headers.origin;
   if (origin === undefined) {
-    if (isLoopbackAddress(req.socket.remoteAddress)) return { origin: null };
+    if (hasFetchMetadata(req)) {
+      throw new HttpError(403, "forbidden", "Browser requests must come from the nitpick extension");
+    }
+    if (local) return { origin: null };
     throw new HttpError(403, "forbidden", "Requests without an Origin header are only accepted from this machine");
   }
-  if (!isAllowedOrigin(origin, config.allowedOrigins)) {
+  if (!isAllowedOrigin(origin, config)) {
     throw new HttpError(403, "forbidden", `Origin ${origin} is not allowed`);
   }
   return { origin };
+}
+
+/**
+ * True if the request carries `Sec-Fetch-*` headers saying it came from a
+ * web page. `Sec-Fetch-Site: none` is the exception: Chrome uses it only
+ * for requests no page initiated, i.e. the user typing a URL (which cannot
+ * add our custom header) or a privileged context. That includes the nitpick
+ * extension itself: Chrome omits Origin on an extension's GET to a host it
+ * has permission for and sends `Sec-Fetch-Site: none` instead. Pages
+ * cannot set or change Sec-Fetch-* headers.
+ */
+function hasFetchMetadata(req: IncomingMessage): boolean {
+  if (req.headers["sec-fetch-site"] === "none") return false;
+  return Object.keys(req.headers).some((name) => name.startsWith("sec-fetch-"));
 }
 
 /**

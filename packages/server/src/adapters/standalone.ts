@@ -37,6 +37,17 @@ export async function startStandalone(nitpick: Nitpick, options: StandaloneOptio
   const logger = options.logger ?? createConsoleLogger();
   const { config } = nitpick;
 
+  // Refuse rather than warn: on a non-loopback interface, other machines
+  // can reach us, and without a token the access checks would rest on
+  // headers that non-browser clients can forge.
+  if (!isLoopbackHostname(config.host) && config.token === null) {
+    throw new Error(
+      `Refusing to listen on "${config.host}" without a token: other machines on your network could ` +
+        `write into ${config.outputDir}. Set "token" in nitpick.config.json (or pass --token), ` +
+        `or use the default host 127.0.0.1.`,
+    );
+  }
+
   const server = http.createServer((req, res) => {
     void nitpick.handler(req, res).then((handled) => {
       if (!handled) {
@@ -59,7 +70,7 @@ export async function startStandalone(nitpick: Nitpick, options: StandaloneOptio
   if (!isLoopbackHostname(config.host)) {
     logger.warn(
       `listening on ${config.host}, which is NOT loopback. Other machines on your network can reach ` +
-        `this server, and it writes files into ${config.outputDir}. Set a "token" or use "127.0.0.1".`,
+        `this server; only requests with the token are accepted from them.`,
     );
   }
   printBanner(logger, nitpick, url);

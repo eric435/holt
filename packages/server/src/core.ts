@@ -9,6 +9,7 @@
  * (It lives here rather than in index.ts so the Vite entry can import it
  * without pulling in the whole public API module.)
  */
+import { DEFAULT_HOST } from "@nitpick/protocol";
 import { loadConfig } from "./config/load.js";
 import type { NitpickConfig, ResolvedConfig } from "./config/types.js";
 import { createHandler, type NitpickHandler } from "./http/handler.js";
@@ -37,6 +38,23 @@ export interface Nitpick {
   close(): Promise<void>;
 }
 
+/**
+ * Say out loud, at startup, every setting that changes who may talk to the
+ * server, so a forgotten `allowedOrigins` entry or host override is never
+ * silently in effect.
+ */
+function logAccessPolicy(config: ResolvedConfig, logger: Logger): void {
+  for (const origin of config.allowedOrigins) {
+    logger.warn(`allowedOrigins: web origin ${origin} may call the nitpick API`);
+  }
+  for (const id of config.allowedExtensionIds) {
+    logger.warn(`allowedExtensionIds: only listed extensions may call the API; allowed: chrome-extension://${id}`);
+  }
+  if (config.host !== DEFAULT_HOST) {
+    logger.warn(`host is set to "${config.host}" (default ${DEFAULT_HOST})`);
+  }
+}
+
 export async function createNitpick(options: CreateNitpickOptions = {}): Promise<Nitpick> {
   const logger = options.logger ?? createConsoleLogger();
   const { config, warnings } = await loadConfig(options.cwd ?? process.cwd(), options.overrides, {
@@ -44,6 +62,7 @@ export async function createNitpick(options: CreateNitpickOptions = {}): Promise
     ...(options.overridesSource !== undefined && { overridesSource: options.overridesSource }),
   });
   for (const warning of warnings) logger.warn(warning);
+  logAccessPolicy(config, logger);
 
   const sessions = new SessionStore({
     root: config.root,

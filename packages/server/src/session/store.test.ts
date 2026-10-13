@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { EntryInput } from "@nitpick/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MAX_PENDING_UPLOADS } from "../config/defaults.js";
 import { SessionError, SessionStore, assertInside } from "./store.js";
 
 let root: string;
@@ -155,6 +156,92 @@ describe("SessionStore", () => {
         durationMs: 1,
       }),
     ).rejects.toThrow(/does not exist/);
+  });
+
+  describe("reservations across session changes", () => {
+    const recordingFor = (file: string): EntryInput => ({
+      kind: "recording",
+      capturedAt: clock.toISOString(),
+      page: { url: "", title: "" },
+      file,
+      durationMs: 1,
+    });
+
+    it("releasing a reservation from an ended session does not cancel a new session's reservation of the same name", async () => {
+      const store = createStore();
+      const old = await store.reserveMedia("recording", "webm");
+      await store.start(); // ends the old session; same second, so the folder gets a -2 suffix
+      const fresh = await store.reserveMedia("recording", "webm");
+      expect(fresh.file).toBe(old.file); // both "001-recording.webm"
+      expect(fresh.sessionGeneration).not.toBe(old.sessionGeneration);
+
+      store.releaseMedia(old); // the old upload failed late
+      await writeFile(fresh.path, "bytes");
+      const { entry } = await store.addEntry(recordingFor(fresh.file));
+      expect(entry.seq).toBe(1);
+    });
+
+    it("finishMedia confirms the session when it is unchanged", async () => {
+      const store = createStore();
+      const media = await store.reserveMedia("screenshot", "png");
+      await writeFile(media.path, "bytes");
+      expect((await store.finishMedia(media)).id).toBe(media.session.id);
+    });
+
+    it("finishMedia rejects with a conflict and deletes the file if the session changed mid-upload", async () => {
+      const store = createStore();
+      const media = await store.reserveMedia("screenshot", "png");
+
+      // Manual promise standing in for a slow upload: the bytes arrive only
+      // after a new session has started.
+      let finishUpload!: () => void;
+      const upload = new Promise<void>((resolve) => (finishUpload = resolve)).then(() => writeFile(media.path, "late"));
+      clock = new Date(2026, 9, 13, 8, 0, 0);
+      const fresh = await store.start();
+      finishUpload();
+      await upload;
+
+      const error = await store.finishMedia(media).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(SessionError);
+      expect((error as SessionError).reason).toBe("conflict");
+      expect(await readdir(media.session.dir)).toEqual(["notes.md"]); // late file removed
+      expect(store.current?.id).toBe(fresh.id);
+    });
+
+    it("finishMedia rejects if the session was stopped mid-upload", async () => {
+      const store = createStore();
+      const media = await store.reserveMedia("screenshot", "png");
+      await store.stop();
+      await writeFile(media.path, "late");
+      await expect(store.finishMedia(media)).rejects.toMatchObject({ reason: "conflict" });
+    });
+  });
+
+  it("caps uploads waiting for an entry, and frees a slot when one is used or released", async () => {
+    const store = createStore();
+    const reserved = [];
+    for (let i = 0; i < MAX_PENDING_UPLOADS; i++) reserved.push(await store.reserveMedia("screenshot", "png"));
+    await expect(store.reserveMedia("screenshot", "png")).rejects.toMatchObject({ reason: "limit" });
+
+    store.releaseMedia(reserved[0]!);
+    const next = await store.reserveMedia("screenshot", "png");
+    await expect(store.reserveMedia("screenshot", "png")).rejects.toMatchObject({ reason: "limit" });
+
+    await writeFile(next.path, "bytes");
+    await store.addEntry({
+      kind: "screenshot",
+      capturedAt: clock.toISOString(),
+      page: { url: "", title: "" },
+      file: next.file,
+      mode: "viewport",
+      width: 1,
+      height: 1,
+    });
+    await expect(store.reserveMedia("screenshot", "png")).resolves.toBeDefined();
+
+    // A new session starts with an empty count.
+    await store.start();
+    await expect(store.reserveMedia("screenshot", "png")).resolves.toBeDefined();
   });
 
   describe("resolveMediaPath", () => {

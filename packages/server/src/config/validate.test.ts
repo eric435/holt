@@ -19,6 +19,7 @@ describe("validateConfig", () => {
       maxUploadBytes: 1024,
       sessionTitle: "Checkout QA",
       allowedOrigins: ["http://localhost:3000", "https://app.test"],
+      allowedExtensionIds: ["abcdefghijklmnopabcdefghijklmnop"],
     };
     const { $schema: _ignored, ...expected } = raw;
     expect(validate(raw)).toEqual({ config: expected, warnings: [] });
@@ -50,6 +51,12 @@ describe("validateConfig", () => {
     ["allowedOrigins", ["ftp://example.com"], /exact http\(s\) origins/],
     ["allowedOrigins", ["not a url"], /must contain origins like/],
     ["allowedOrigins", [42], /must contain only strings/],
+    ["allowedExtensionIds", "abcdefghijklmnopabcdefghijklmnop", /"allowedExtensionIds" must be an array/],
+    ["allowedExtensionIds", ["ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP"], /32 lowercase letters a-p/],
+    ["allowedExtensionIds", ["abcdefghijklmnopqrstuvwxyzabcdef"], /32 lowercase letters a-p/],
+    ["allowedExtensionIds", ["abc"], /got "abc"/],
+    ["allowedExtensionIds", ["chrome-extension://abcdefghijklmnopabcdefghijklmnop"], /32 lowercase letters/],
+    ["allowedExtensionIds", [null], /got null/],
   ])("rejects %s = %j", (key, value, message) => {
     expect(() => validate({ [key]: value })).toThrow(ConfigError);
     expect(() => validate({ [key]: value })).toThrow(message);

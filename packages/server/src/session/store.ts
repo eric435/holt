@@ -8,6 +8,8 @@
  *   reserveMedia   pick the next sequence number and a file name for an upload
  *                  (auto-starting a session if needed) and remember it as
  *                  "uploaded, waiting for its entry".
+ *   finishMedia    after the bytes are on disk: confirm the session the
+ *                  upload was reserved in is still the active one.
  *   addEntry       append an entry to notes.md (auto-starting if needed). A
  *                  media entry reuses its upload's sequence number, so
  *                  "## 3. Screenshot" links to "003-screenshot.png".
@@ -19,19 +21,41 @@
  * promise chain that runs one operation at a time. (Streaming the upload
  * bytes happens outside the lock, so a big recording does not block notes.)
  *
+ * Session identity: uploads stream *outside* the lock, so a session can end
+ * (and a new one start) while bytes are still arriving. Every session gets
+ * a `generation` number, and a reservation remembers the generation it was
+ * made in. Releasing or finishing a reservation only ever acts on that
+ * generation, never on whatever session happens to be active by then.
+ * (Folder ids are not enough: a new session can reuse a file name like
+ * "001-screenshot.png", and in rare cases even a folder name.)
+ *
  * State is in memory only. If the server restarts, the next capture starts
  * a fresh session folder; old folders are never modified again.
  */
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { SESSION_FILE_NAME, type Entry, type EntryInput, type SessionInfo } from "@nitpick/protocol";
+import { MAX_PENDING_UPLOADS } from "../config/defaults.js";
 import { renderEntry, renderFooter, renderHeader } from "./markdown.js";
 import { isPlainFileName, mediaFileName, sessionFolderName, type MediaKind } from "./naming.js";
 
-/** A client mistake the HTTP layer should report as 400 (not a server bug). */
+/**
+ * A problem caused by the client's request rather than a server bug. The
+ * HTTP layer maps `reason` to a status: "invalid" -> 400, "conflict" -> 409,
+ * "limit" -> 429. (The store itself knows nothing about HTTP.)
+ */
+export type SessionErrorReason = "invalid" | "conflict" | "limit";
+
 export class SessionError extends Error {
   override name = "SessionError";
+
+  constructor(
+    message: string,
+    readonly reason: SessionErrorReason = "invalid",
+  ) {
+    super(message);
+  }
 }
 
 export interface SessionStoreOptions {
@@ -46,6 +70,8 @@ export interface SessionStoreOptions {
 }
 
 interface ActiveSession {
+  /** Unique per store instance; see "Session identity" above. */
+  generation: number;
   id: string;
   dir: string;
   notesPath: string;
@@ -59,6 +85,8 @@ interface ActiveSession {
 
 export interface ReservedMedia {
   session: SessionInfo;
+  /** Identity of the session this reservation belongs to. */
+  sessionGeneration: number;
   seq: number;
   /** Bare file name to return to the client, e.g. "001-screenshot.png". */
   file: string;
@@ -83,6 +111,7 @@ export class SessionStore {
   private readonly defaultTitle: string;
   private readonly now: () => Date;
   private session: ActiveSession | null = null;
+  private generations = 0;
   private tail: Promise<unknown> = Promise.resolve();
 
   constructor(options: SessionStoreOptions) {
@@ -140,21 +169,60 @@ export class SessionStore {
     return full;
   }
 
-  /** Reserve a sequence number and file path for an incoming upload. */
+  /**
+   * Reserve a sequence number and file path for an incoming upload.
+   * At most MAX_PENDING_UPLOADS uploads may wait for their entry at once;
+   * without a cap, a client could fill the disk with files that never show
+   * up in notes.md.
+   */
   reserveMedia(kind: MediaKind, ext: string): Promise<ReservedMedia> {
     return this.exclusive(async () => {
       const session = await this.activeUnlocked();
+      if (session.pendingMedia.size >= MAX_PENDING_UPLOADS) {
+        throw new SessionError(
+          `Too many uploads (${MAX_PENDING_UPLOADS}) are waiting for an entry in this session. ` +
+            `Post entries for them (or start a new session) before uploading more.`,
+          "limit",
+        );
+      }
       const seq = this.nextSeq();
       const file = mediaFileName(seq, kind, ext);
       const filePath = this.resolveMediaPath(file);
       session.pendingMedia.set(file, seq);
-      return { session: this.toInfo(session), seq, file, path: filePath };
+      return { session: this.toInfo(session), sessionGeneration: session.generation, seq, file, path: filePath };
     });
   }
 
-  /** Forget a reservation whose upload failed (the caller deletes the partial file). */
-  releaseMedia(file: string): void {
-    this.session?.pendingMedia.delete(file);
+  /**
+   * Forget a reservation whose upload failed (the caller deletes the
+   * partial file). Only touches the session the reservation was made in: if
+   * that session already ended, there is nothing to release, and a newer
+   * session's reservation with the same file name must not be cancelled.
+   */
+  releaseMedia(media: ReservedMedia): void {
+    if (this.session?.generation === media.sessionGeneration) {
+      this.session.pendingMedia.delete(media.file);
+    }
+  }
+
+  /**
+   * Call once an upload's bytes are fully on disk. If the session it was
+   * reserved in is no longer active (stopped or replaced mid-upload), the
+   * file is deleted and a "conflict" SessionError is thrown: the client
+   * must not reference a file in a session that has ended.
+   */
+  finishMedia(media: ReservedMedia): Promise<SessionInfo> {
+    return this.exclusive(async () => {
+      const session = this.session;
+      if (session?.generation !== media.sessionGeneration) {
+        await rm(media.path, { force: true });
+        throw new SessionError(
+          "The session changed while this file was uploading, so it was discarded. Upload it again.",
+          "conflict",
+        );
+      }
+      return this.toInfo(session);
+    });
   }
 
   /** Validate, number, render and append an entry. */
@@ -223,7 +291,9 @@ export class SessionStore {
       { encoding: "utf8", flag: "wx" },
     );
 
+    this.generations += 1;
     this.session = {
+      generation: this.generations,
       id,
       dir,
       notesPath,

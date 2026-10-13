@@ -18,6 +18,7 @@ export const DEFAULTS = {
   maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
   sessionTitle: "QA session",
   allowedOrigins: [] as string[],
+  allowedExtensionIds: [] as string[],
 } as const;
 
 /**
@@ -30,3 +31,11 @@ export const MAX_JSON_BYTES = 256 * 1024;
 
 /** Longest accepted session title. Titles end up in an H1, so keep them sane. */
 export const MAX_TITLE_LENGTH = 200;
+
+/**
+ * Most uploads that may wait for their entry within one session. The
+ * extension posts the entry right after each upload, so a real client never
+ * gets near this; it only stops a misbehaving one from filling the disk
+ * with files that never appear in notes.md.
+ */
+export const MAX_PENDING_UPLOADS = 50;

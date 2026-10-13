@@ -121,6 +121,9 @@ export async function launchChrome({ headless = true, extensionDir, extraArgs = 
     "--disable-search-engine-choice-screen",
     ...(extensionDir ? [`--load-extension=${extensionDir}`, "--enable-unsafe-extension-debugging"] : []),
     ...(headless ? ["--headless=new"] : []),
+    // Linux CI containers run as root without user namespaces, where
+    // Chrome's sandbox refuses to start. Only relax it there.
+    ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
     ...extraArgs,
     "about:blank",
   ];

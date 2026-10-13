@@ -76,6 +76,10 @@ export type ErrorCode =
   | "unsupported-media-type"
   | "payload-too-large"
   | "not-found"
+  /** The request raced with a session change (e.g. an upload finished after a new session started). Retry. */
+  | "conflict"
+  /** A per-session limit was hit (e.g. too many uploads not yet referenced by an entry). */
+  | "too-many-requests"
   | "internal";
 
 export interface ErrorResponse {

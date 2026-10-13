@@ -22,9 +22,14 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test
-      # Review what would actually be published. Anything unexpected here
-      # (tests, source maps you didn't mean to ship, a stray .env) shows up
-      # in the job log before it ever reaches npm.
-      - name: Preview published files
-        run: npm pack --dry-run
-        working-directory: packages/server
+      # Fail if the packed tarball contains anything outside an explicit
+      # allow-list (tests, source maps, a stray .env) or declares a runtime
+      # dependency. See packages/server/scripts/check-pack.mjs.
+      - name: Check published files
+        run: pnpm --filter nitpick-notes check-pack
+      # Load the built extension in a real headless Chrome and fail on any
+      # startup error, forged-message acceptance, or storage leak.
+      - name: Extension smoke test
+        run: pnpm --filter @nitpick/extension smoke
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
