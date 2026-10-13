@@ -1,11 +1,14 @@
 /**
  * Keyboard shortcuts (the "commands" key in manifest.json).
  *
- * Defaults: Alt+S visible area, Alt+X select area, Alt+A voice note,
- * Alt+D tab recording. Chrome allows at most 4 `suggested_key` entries per
+ * Defaults: Alt+S select area, Alt+A voice note, Alt+R tab recording,
+ * Alt+T text note. Chrome allows at most 4 `suggested_key` entries per
  * extension (a fifth is a manifest load error; scripts/check-manifest.mjs
- * enforces it), so screenshot-full (we suggest Alt+W), quick-note (Alt+T)
- * and open-panel ship unbound; the panel shows a hint and the real bindings
+ * enforces it), so screenshot-viewport (we suggest Alt+X), screenshot-full
+ * (Alt+W) and open-panel ship unbound. A suggested key that is also a
+ * built-in Chrome shortcut on some platform is silently not assigned there
+ * (Alt+D, "focus the address bar" on Windows/Linux, is why recording is
+ * Alt+R). The panel shows a hint and the real bindings
  * (chrome.commands.getAll()), since users can rebind everything at
  * chrome://extensions/shortcuts.
  *

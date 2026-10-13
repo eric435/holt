@@ -44,34 +44,34 @@ Start the server in your project (`npx holt`, or the Vite plugin). The panel sho
 
 | Command | Default |
 | --- | --- |
-| Screenshot: visible area | Alt+S |
-| Screenshot: select area | Alt+X |
+| Screenshot: select area | Alt+S |
 | Start/stop voice note | Alt+A |
-| Start/stop tab recording | Alt+D |
+| Start/stop tab recording | Alt+R |
+| Text note (popup, Enter saves) | Alt+T |
+| Screenshot: visible area | not set (suggested: Alt+X) |
 | Screenshot: full page | not set (suggested: Alt+W) |
-| Text note (popup, Enter saves) | not set (suggested: Alt+T) |
 | Open the side panel | not set (clicking the icon does it) |
 
-Chrome allows at most four default shortcuts per extension (a fifth is a load error: "Too many shortcuts specified for 'commands': The maximum is 4."), so full-page screenshot and text note ship unbound. Set them (and change any other) at `chrome://extensions/shortcuts`; the panel shows a one-time tip with a link, and lists the current bindings under **Settings → Shortcuts**. Tooltips in the panel and on the toolbar icon always show the bindings Chrome actually has, not these defaults. If another extension already uses one of the defaults, Chrome silently leaves ours unbound.
+Chrome allows at most four default shortcuts per extension (a fifth is a load error: "Too many shortcuts specified for 'commands': The maximum is 4."), so visible-area and full-page screenshots ship unbound. Set them (and change any other) at `chrome://extensions/shortcuts`; the panel shows a one-time tip with a link, and lists the current bindings under **Settings → Shortcuts**. Tooltips in the panel and on the toolbar icon always show the bindings Chrome actually has, not these defaults. If another extension already uses one of the defaults, or it is one of Chrome's own shortcuts on your platform, Chrome silently leaves ours unbound.
 
 - **macOS:** Alt is Option (⌥). Chrome takes a bound ⌥+letter combination for itself, so while holt has ⌥S bound you can't type the character ⌥S normally produces (ß on a US layout) in web pages. Rebind if you need those characters.
-- **Windows/Linux:** Alt+D normally focuses the address bar, and other Alt+letter combinations may open menus. An extension shortcut takes precedence while it is bound; rebind Alt+D at `chrome://extensions/shortcuts` if you rely on the browser's own.
+- **Windows/Linux:** Chrome never assigns an extension's *suggested* key that is one of its own shortcuts there (Alt+D focuses the address bar, Alt+E and Alt+F open the menu), which is why recording is Alt+R rather than Alt+D. You can still pick such a key yourself at `chrome://extensions/shortcuts`; it then takes precedence over the browser's.
 
 ## Headless mode: the panel is optional
 
 Every shortcut works with the side panel closed:
 
 - **Screenshots** are taken and uploaded by the service worker, as before.
-- **Tab recording (Alt+D)** and **voice notes (Alt+A)** run in an *offscreen document*, a hidden extension page the worker creates while something is recording and closes afterwards. They keep running if you close the panel, and the panel's **Record tab** / **Voice note** buttons drive the same recorders.
+- **Tab recording (Alt+R)** and **voice notes (Alt+A)** run in an *offscreen document*, a hidden extension page the worker creates while something is recording and closes afterwards. They keep running if you close the panel, and the panel's **Record tab** / **Voice note** buttons drive the same recorders.
 - **Text note (Alt+T)** opens a small popup under the toolbar icon with the text field focused: type, press Enter to save (Shift+Enter for a new line, Esc to close). It shows "Saved #N" and closes. If Chrome can't open the popup (for example when the browser window isn't focused), the same page opens in a small window instead. The panel's own note field uses the same keys.
 
-**Status indicator.** The toolbar icon shows what is going on: a red **REC** badge while a tab (or window/screen) recording runs, an orange **MIC** badge during a voice note (REC if both), and a red dot on the icon itself. Hover it for details, e.g. "holt (acme-web): recording tab since 14:02 (⌥D to stop)". The icon is browser UI, so unlike an in-page overlay it never appears in screenshots or recordings and needs no access to the page. Pin the icon (puzzle-piece menu → pin) so it is always visible.
+**Status indicator.** The toolbar icon shows what is going on: a red **REC** badge while a tab (or window/screen) recording runs, an orange **MIC** badge during a voice note (REC if both), and a red dot on the icon itself. Hover it for details, e.g. "holt (acme-web): recording tab since 14:02 (⌥R to stop)". The icon is browser UI, so unlike an in-page overlay it never appears in screenshots or recordings and needs no access to the page. Pin the icon (puzzle-piece menu → pin) so it is always visible.
 
 **Feedback.** With the panel open, results and errors appear there as messages. With it closed, the badge flashes "✓" when something was saved and "!" on an error (the error text is in the icon's tooltip for a few seconds), then goes back to REC/MIC if something is still recording.
 
 ## Recording
 
-- **Record tab** (Alt+D, or the panel button) uses `chrome.tabCapture`: no picker, records only the tab's content at the tab's size, follows the tab across navigations, and keeps going with the panel closed. While a tab is captured Chrome stops playing its sound to your speakers; holt plays it back, so you still hear the page. Closing the tab stops the recording and saves what was recorded. Chrome only allows it on a tab where you invoked holt (a shortcut or a toolbar click on that tab, the same rule as screenshots); `chrome://` pages and the Web Store can't be recorded.
+- **Record tab** (Alt+R, or the panel button) uses `chrome.tabCapture`: no picker, records only the tab's content at the tab's size, follows the tab across navigations, and keeps going with the panel closed. While a tab is captured Chrome stops playing its sound to your speakers; holt plays it back, so you still hear the page. Closing the tab stops the recording and saves what was recorded. Chrome only allows it on a tab where you invoked holt (a shortcut or a toolbar click on that tab, the same rule as screenshots); `chrome://` pages and the Web Store can't be recorded.
 - **Record a window or screen…** (panel only) uses Chrome's screen picker (`getDisplayMedia`). Chrome only shows the picker right after a click in a visible page, so this one can't be started from a shortcut or run in the background: it stops if you close the panel. You can also stop it with Chrome's own "Stop sharing" bar.
 
 ## Voice notes and microphones

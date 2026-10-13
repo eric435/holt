@@ -39,8 +39,8 @@ export const COMMAND_LABELS: ReadonlyArray<readonly [CommandName, string]> = [
  * the key we suggest the user assign. Shown as a one-time hint.
  */
 export const SUGGESTED_UNBOUND: ReadonlyArray<readonly [CommandName, string, string]> = [
+  ["screenshot-viewport", "X", "visible-area screenshot"],
   ["screenshot-full", "W", "full-page screenshot"],
-  ["quick-note", "T", "text note"],
 ];
 
 /** command name -> current shortcut ("" = unbound). */
@@ -71,7 +71,7 @@ export function altKeyLabel(letter: string, isMac: boolean): string {
 
 /**
  * The hint for commands that still have no key, e.g.
- * "Set Alt+W (full-page screenshot) and Alt+T (text note) at chrome://extensions/shortcuts",
+ * "Set Alt+X (visible-area screenshot) and Alt+W (full-page screenshot) at chrome://extensions/shortcuts",
  * or null when they are all bound.
  */
 export function unboundHint(shortcuts: ShortcutMap, isMac: boolean): string | null {

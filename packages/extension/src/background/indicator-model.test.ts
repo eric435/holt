@@ -6,7 +6,7 @@ const page = { url: "http://localhost:5173/", title: "App" };
 const T_1402 = Date.UTC(2026, 9, 13, 14, 2);
 const T_1403 = Date.UTC(2026, 9, 13, 14, 3);
 const formatClock = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
-const shortcuts = { "toggle-recording": "Alt+D", "toggle-voice": "Alt+A" };
+const shortcuts = { "toggle-recording": "Alt+R", "toggle-voice": "Alt+A" };
 
 const tab: ScreenRecordingState = { id: "s1", source: "tab", startedAt: T_1402, page, tabId: 7 };
 const display: ScreenRecordingState = { id: "s2", source: "display", startedAt: T_1402, page };
@@ -31,7 +31,7 @@ describe("indicatorFor", () => {
       recording: true,
       text: "REC",
       color: REC_COLOR,
-      title: "holt: recording tab since 14:02 (Alt+D to stop)",
+      title: "holt: recording tab since 14:02 (Alt+R to stop)",
     });
   });
 
@@ -48,7 +48,7 @@ describe("indicatorFor", () => {
     const result = indicatorFor({ recording: { screen: tab, voice }, shortcuts, projectName: "acme", formatClock });
     expect(result.text).toBe("REC");
     expect(result.color).toBe(REC_COLOR);
-    expect(result.title).toBe("holt (acme): recording tab since 14:02 (Alt+D to stop) · voice note since 14:03 (Alt+A to stop)");
+    expect(result.title).toBe("holt (acme): recording tab since 14:02 (Alt+R to stop) · voice note since 14:03 (Alt+A to stop)");
   });
 
   it("window/screen recording from the panel says where to stop it", () => {

@@ -38,14 +38,11 @@
   ],
   "commands": {
     "screenshot-viewport": {
-      "suggested_key": {
-        "default": "Alt+S"
-      },
-      "description": "Screenshot the visible part of the page"
+      "description": "Screenshot the visible part of the page; suggested: Alt+X"
     },
     "screenshot-area": {
       "suggested_key": {
-        "default": "Alt+X"
+        "default": "Alt+S"
       },
       "description": "Screenshot a selected area"
     },
@@ -57,7 +54,7 @@
     },
     "toggle-recording": {
       "suggested_key": {
-        "default": "Alt+D"
+        "default": "Alt+R"
       },
       "description": "Start/stop recording this tab"
     },
@@ -65,7 +62,10 @@
       "description": "Screenshot the full page (scroll and stitch); suggested: Alt+W"
     },
     "quick-note": {
-      "description": "Type a note about this page; suggested: Alt+T"
+      "suggested_key": {
+        "default": "Alt+T"
+      },
+      "description": "Type a note about this page"
     },
     "open-panel": {
       "description": "Open the holt side panel"

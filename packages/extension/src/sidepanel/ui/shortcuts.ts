@@ -27,8 +27,8 @@ export function openShortcutsPage(e?: Event): void {
 }
 
 /**
- * "Tip: Set Alt+W (full-page screenshot) and Alt+T (text note) at
- * chrome://extensions/shortcuts". Shown while those commands are unbound,
+ * "Tip: Set Alt+X (visible-area screenshot) and Alt+W (full-page
+ * screenshot) at chrome://extensions/shortcuts". Shown while those commands are unbound,
  * until dismissed (remembered in settings).
  */
 export function mountShortcutHint(root: HTMLElement): void {

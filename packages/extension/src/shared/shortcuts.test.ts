@@ -5,11 +5,11 @@ import { altKeyLabel, shortcutMap, unboundHint, withShortcut } from "./shortcuts
 const MAC_DEFAULTS = [
   { name: "_execute_action", shortcut: "" },
   { name: "open-panel", shortcut: "" },
-  { name: "quick-note", shortcut: "" },
-  { name: "screenshot-area", shortcut: "⌥X" },
+  { name: "quick-note", shortcut: "⌥T" },
+  { name: "screenshot-area", shortcut: "⌥S" },
   { name: "screenshot-full", shortcut: "" },
-  { name: "screenshot-viewport", shortcut: "⌥S" },
-  { name: "toggle-recording", shortcut: "⌥D" },
+  { name: "screenshot-viewport", shortcut: "" },
+  { name: "toggle-recording", shortcut: "⌥R" },
   { name: "toggle-voice", shortcut: "⌥A" },
 ];
 
@@ -17,7 +17,7 @@ describe("shortcutMap", () => {
   it("maps names to bindings, unbound as empty string", () => {
     const map = shortcutMap(MAC_DEFAULTS);
     expect(map["toggle-voice"]).toBe("⌥A");
-    expect(map["quick-note"]).toBe("");
+    expect(map["screenshot-full"]).toBe("");
     expect(map["nope"]).toBeUndefined();
   });
   it("skips nameless entries and missing shortcuts", () => {
@@ -28,7 +28,7 @@ describe("shortcutMap", () => {
 describe("withShortcut", () => {
   const map = shortcutMap(MAC_DEFAULTS);
   it("appends the current binding", () => {
-    expect(withShortcut("Visible", map, "screenshot-viewport")).toBe("Visible (⌥S)");
+    expect(withShortcut("Area", map, "screenshot-area")).toBe("Area (⌥S)");
   });
   it("leaves the text alone when unbound or unknown", () => {
     expect(withShortcut("Full page", map, "screenshot-full")).toBe("Full page");
@@ -39,13 +39,13 @@ describe("withShortcut", () => {
 describe("unboundHint", () => {
   it("names both suggested keys while both are unbound", () => {
     expect(unboundHint(shortcutMap(MAC_DEFAULTS), false)).toBe(
-      "Set Alt+W (full-page screenshot) and Alt+T (text note) at chrome://extensions/shortcuts",
+      "Set Alt+X (visible-area screenshot) and Alt+W (full-page screenshot) at chrome://extensions/shortcuts",
     );
-    expect(unboundHint(shortcutMap(MAC_DEFAULTS), true)).toMatch(/^Set ⌥W .* and ⌥T /);
+    expect(unboundHint(shortcutMap(MAC_DEFAULTS), true)).toMatch(/^Set ⌥X .* and ⌥W /);
   });
   it("names only what is still missing, and disappears when all are set", () => {
-    expect(unboundHint({ "screenshot-full": "Alt+W", "quick-note": "" }, false)).toBe("Set Alt+T (text note) at chrome://extensions/shortcuts");
-    expect(unboundHint({ "screenshot-full": "Alt+W", "quick-note": "Alt+T" }, false)).toBeNull();
+    expect(unboundHint({ "screenshot-viewport": "", "screenshot-full": "Alt+W" }, false)).toBe("Set Alt+X (visible-area screenshot) at chrome://extensions/shortcuts");
+    expect(unboundHint({ "screenshot-viewport": "Alt+X", "screenshot-full": "Alt+W" }, false)).toBeNull();
   });
   it("altKeyLabel", () => {
     expect(altKeyLabel("W", false)).toBe("Alt+W");

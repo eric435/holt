@@ -155,7 +155,14 @@ export async function stopChrome(chrome) {
     await Promise.race([exited, sleep(3_000)]);
     if (chrome.proc.exitCode === null) chrome.proc.kill("SIGKILL");
   }
-  rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+  // Best effort: on Linux, Chrome's helper processes can outlive the main one
+  // for a moment and keep writing into the profile (ENOTEMPTY seen in CI). A
+  // leftover temp dir must not fail the run.
+  try {
+    rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`[chrome] could not remove the temp profile ${chrome.profile}: ${error.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

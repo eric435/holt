@@ -7,7 +7,9 @@
  *      and load the extension (see lib/chrome.mjs for how and why).
  *   2. Fail on any console.error / uncaught exception in the worker within ~3 s.
  *   3. Extra checks: commands registered with the intended default keys (4
- *      bound, the rest unbound), no offscreen document at startup, a voice
+ *      bound, the rest unbound; CI runs on Linux, so this also catches a
+ *      default that is a Chrome shortcut there, which Chrome refuses to
+ *      assign), no offscreen document at startup, a voice
  *      note without microphone permission fails fast and offers
  *      permissions.html in the panel, the side panel page renders without
  *      errors and migrates legacy storage.sync settings to storage.local, the on-demand content scripts work on a local fixture page
@@ -17,7 +19,7 @@
  *      and the Esc-cancel round trip back to the panel as a toast), and a
  *      simulated toolbar click both opens the side panel and grants
  *      activeTab (captureVisibleTab succeeds), and page-helper metrics taken
- *      during the panel's open animation wait for the final width.
+ *      as soon as the panel starts narrowing the page wait for the final width.
  *
  * Usage: pnpm --filter @holt/extension smoke   (build first)
  * Env:   CHROME_PATH=/path/to/chrome   to use another Chrome/Chromium.
@@ -64,7 +66,10 @@ function startFixtureServer() {
 }
 
 async function run(headless) {
-  const chrome = await launchChrome({ headless, extensionDir: DIST });
+  // A fake microphone, so the voice-note check below behaves the same on a CI
+  // runner (no audio hardware: getUserMedia fails with NotFoundError) as on a
+  // laptop. No --use-fake-ui-for-media-stream: permission must stay ungranted.
+  const chrome = await launchChrome({ headless, extensionDir: DIST, extraArgs: ["--use-fake-device-for-media-stream"] });
   const cdp = await Cdp.connect(chrome.wsUrl);
   const collector = errorCollector(cdp);
   log(`Chrome ${headless ? "headless" : "headed"}, DevTools on port ${chrome.port}`);
@@ -84,10 +89,13 @@ async function run(headless) {
     const commands = await evaluate(cdp, worker.sessionId, "chrome.commands.getAll().then(cs => cs.map(c => c.name))");
     for (const name of EXPECTED_COMMANDS) expect(commands.includes(name), `command not registered: ${name}`);
     const bindings = await evaluate(cdp, worker.sessionId, "chrome.commands.getAll().then(cs => Object.fromEntries(cs.map(c => [c.name, c.shortcut])))");
-    for (const name of ["screenshot-viewport", "screenshot-area", "toggle-voice", "toggle-recording"]) {
-      expect(bindings[name], `${name} has no default shortcut (another extension may hold it): ${JSON.stringify(bindings)}`);
+    // Fresh profile, no other extensions: an unbound default here means Chrome
+    // refused the suggested key, usually because it is one of Chrome's own
+    // shortcuts on this platform (e.g. Alt+D on Windows/Linux).
+    for (const name of ["screenshot-area", "toggle-voice", "toggle-recording", "quick-note"]) {
+      expect(bindings[name], `${name} has no default shortcut on ${process.platform} (is its suggested key a Chrome shortcut here?): ${JSON.stringify(bindings)}`);
     }
-    for (const name of ["screenshot-full", "quick-note", "open-panel"]) {
+    for (const name of ["screenshot-viewport", "screenshot-full", "open-panel"]) {
       expect(!bindings[name], `${name} should ship unbound, has ${bindings[name]}`);
     }
     log(`shortcuts: ${Object.entries(bindings).map(([k, v]) => `${k}=${v || "-"}`).join(" ")}`);
@@ -120,15 +128,16 @@ async function run(headless) {
     log(`settings migration: sync -> local ${JSON.stringify(stores[1])}; sync now ${JSON.stringify(stores[0])}`);
 
     // ---- 3b. voice note without microphone permission --------------------------
-    // This Chrome has no fake media flags, so the extension has no microphone
-    // grant. The offscreen recorder can't show a prompt; the start must fail
-    // fast and the panel must offer permissions.html.
+    // There is a (fake) microphone but no grant for the extension. The
+    // offscreen recorder can't show a prompt; the start must fail fast and
+    // the panel must offer permissions.html. Any voice-note toast ends the
+    // wait, so a failure reports what the panel said instead.
     await evaluate(cdp, worker.sessionId, `holtTest.handleCommand("toggle-voice", undefined)`);
     const micToast = await waitFor(
-      () => evaluate(cdp, panel, `(() => { const t = document.getElementById('toasts'); return /Microphone access is blocked/.test(t.innerText) ? t.innerText : null; })()`),
-      { timeoutMs: 8_000, what: "the 'microphone blocked' toast" },
+      () => evaluate(cdp, panel, `(() => { const t = document.getElementById('toasts'); return /microphone|voice note/i.test(t.innerText) ? t.innerText : null; })()`),
+      { timeoutMs: 8_000, what: "a voice-note toast" },
     ).catch(() => null);
-    expect(micToast?.includes("Grant microphone access"), `no 'Grant microphone access' offer after a voice note without permission: ${micToast}`);
+    expect(/Microphone access is blocked/.test(micToast ?? "") && micToast.includes("Grant microphone access"), `no 'Grant microphone access' offer after a voice note without permission; panel toasts: ${JSON.stringify(micToast)}`);
     const voiceLeft = await evaluate(cdp, worker.sessionId, `chrome.storage.session.get("recordingVoice").then(s => s.recordingVoice ?? null)`);
     expect(voiceLeft === null, "a failed voice note left recording state behind");
     log(`voice note without permission: ${micToast ? "panel offered permissions.html" : "NO toast"}; state cleared=${voiceLeft === null}`);
@@ -244,6 +253,8 @@ async function run(headless) {
       }
 
       // ---- 5. toolbar click: opens the panel AND grants activeTab ---------
+      // Record every width the page goes through while the panel opens.
+      await evaluate(cdp, page, `window.__holtWidths = [innerWidth]; addEventListener("resize", () => __holtWidths.push(innerWidth)); true`);
       let triggered = false;
       try {
         await clickToolbarIcon(cdp, worker.extensionId, fixtureUrl);
@@ -252,10 +263,18 @@ async function run(headless) {
         log(`skipping toolbar-click check: ${error.message}`);
       }
       if (triggered) {
-        // Right away, while the side panel is still animating the page
-        // narrower: the helper must wait for the width to settle before measuring.
-        // (`raw` is a plain read at the same moment, logged as a control.)
-        const raw = await evaluate(cdp, page, "innerWidth");
+        // As soon as the panel starts narrowing the page, while it may still be
+        // animating: the helper must wait for the width to settle before
+        // measuring. Wait for that first resize rather than asking right after
+        // the click: on a slow CI runner the panel can take longer to start
+        // than the helper's stability window, and the helper can't know a
+        // resize is still coming.
+        const narrowing = await waitFor(() => evaluate(cdp, page, "__holtWidths.length > 1"), {
+          timeoutMs: 5_000,
+          intervalMs: 10,
+          what: "the side panel to narrow the page",
+        }).catch(() => false);
+        expect(narrowing, "the page never got narrower after the toolbar click opened the side panel");
         const early = await evaluate(
           cdp,
           worker.sessionId,
@@ -266,7 +285,8 @@ async function run(headless) {
         const settledWidth = await evaluate(cdp, page, "innerWidth");
         expect(early.widthStable === true, "helper:metrics right after the panel opened reported an unstable width");
         expect(early.innerWidth === settledWidth, `helper:metrics measured ${early.innerWidth}px wide during the panel animation; settled width is ${settledWidth}px`);
-        log(`metrics right after the toolbar click: width ${early.innerWidth} (raw read at click time: ${raw}, settled: ${settledWidth}), stable=${early.widthStable}`);
+        const widths = await evaluate(cdp, page, "__holtWidths");
+        log(`metrics once the page started narrowing: width ${early.innerWidth} (settled: ${settledWidth}; widths seen: ${widths.join(" -> ")}), stable=${early.widthStable}`);
         const { targetInfos: all } = await cdp.send("Target.getTargets");
         const panels = all.filter((t) => t.url === panelUrl && t.targetId !== panelTarget);
         const canCapture = await evaluate(

@@ -6,7 +6,7 @@
  *  - Screenshots: the service worker (it owns captureVisibleTab and the
  *    activeTab grant). We send `capture` and the worker broadcasts the result.
  *  - "Record tab" and "Voice note": the offscreen document, via the worker
- *    (`recorder:toggle`), exactly like the Alt+D / Alt+A shortcuts. They
+ *    (`recorder:toggle`), exactly like the Alt+R / Alt+A shortcuts. They
  *    keep running when this panel is closed. The buttons render from the
  *    recording state in storage.session (store.recording), so they are right
  *    no matter who started the recording or whether this panel was open then.

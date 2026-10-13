@@ -193,14 +193,14 @@ Three MV3 details that shaped the code and are worth knowing:
 ### Headless mode: recording from a shortcut
 
 ```
- Alt+D ──▶ worker: getMediaStreamId({ targetTabId }) ──┐
+ Alt+R ──▶ worker: getMediaStreamId({ targetTabId }) ──┐
                    write recordingScreen (storage.session)
                    ensure offscreen doc (one per extension)
                    "offscreen:start-tab" { streamId, page, settings } ──▶ offscreen:
                                                           getUserMedia(chromeMediaSource: "tab")
                                                           AudioContext: play tab audio back
                                                           MediaRecorder …
- Alt+D ──▶ worker: "offscreen:stop" ─────────────────────────▶ stop, "recorder:stopped" ──▶ worker clears state
+ Alt+R ──▶ worker: "offscreen:stop" ─────────────────────────▶ stop, "recorder:stopped" ──▶ worker clears state
                                                           POST /media, POST /entries
                                                           "entry-created" ──▶ worker: recent list,
                                                                               panel toast or badge ✓
@@ -210,7 +210,7 @@ Three MV3 details that shaped the code and are worth knowing:
 The side panel's "Record tab" and "Voice note" buttons send `recorder:toggle`
 to the worker and take exactly this path. The toolbar icon is the status
 indicator: "REC"/"MIC" badge, a red dot drawn on the icon, and a tooltip
-like "holt (acme-web): recording tab since 14:02 (⌥D to stop)". It is
+like "holt (acme-web): recording tab since 14:02 (⌥R to stop)". It is
 browser UI, so it never appears in screenshots or tab recordings.
 
 Permissions are the minimum: `activeTab` (granted by a hotkey or clicking the
