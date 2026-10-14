@@ -60,8 +60,8 @@
  *      button opens the fake microphone; whatever speech recognition makes
  *      of its beeps, the typed text is saved).
  *   9. Check on disk: one session folder; notes.md has a header and entries
- *      1-14 with the right headings, Page links and notes (as blockquotes,
- *      a plain note as a paragraph); the PNGs are valid and
+ *      1-14 as list items with the right notes, files and Page links;
+ *      the PNGs are valid and
  *      the full-page one is taller than the viewport one; the example's
  *      fixed header appears exactly once in the full-page PNG (pixel
  *      sampling at the header's position in every tile); recordings and
@@ -240,7 +240,7 @@ function readNotes(outDir) {
 }
 
 function entryCount(notes) {
-  return (notes.match(/^## \d+\. /gm) ?? []).length;
+  return parseEntries(notes).length;
 }
 
 /** Validate PNG signature and read IHDR width/height. */
@@ -248,14 +248,27 @@ function pngInfo(file) {
   return pngInfoFromBuffer(readFileSync(file));
 }
 
-/** Split notes.md into entry blocks keyed by number. */
+/**
+ * Split notes.md into entries: the "- " list items between the header's rule
+ * and the footer's. An entry has no number or label of its own; the kind and
+ * number come from its file name ("002-screenshot.png"), if it has a file.
+ */
 function parseEntries(notes) {
-  const blocks = notes.split(/^(?=## \d+\. )/m).slice(1);
+  const body = notes.split(/^---$/m)[1] ?? "";
+  const blocks = body.split(/^(?=- )/m).filter((b) => b.startsWith("- "));
   return blocks.map((block) => {
-    const m = block.match(/^## (\d+)\. (.+?) · (\d\d:\d\d:\d\d)\n/);
+    const file = block.match(/\]\(\.\/((\d+)-([a-z-]+)\.\w+)\)/);
     const image = block.match(/!\[[^\]]*\]\(\.\/([^)]+)\)/);
-    const page = block.match(/^Page: \[(.+)\]\(([^)]+)\)$/m);
-    return { seq: m ? Number(m[1]) : NaN, label: m?.[2], image: image?.[1], pageTitle: page?.[1], pageUrl: page?.[2], block };
+    const page = block.match(/Page: \[(.+)\]\(([^)\s]+)\)$/m);
+    return {
+      seq: file ? Number(file[2]) : null,
+      kind: file?.[3] ?? null,
+      file: file?.[1],
+      image: image?.[1],
+      pageTitle: page?.[1],
+      pageUrl: page?.[2],
+      block,
+    };
   });
 }
 
@@ -1045,34 +1058,40 @@ try {
     "Screenshot", "Recording", "Voice note", "Voice note", "Voice note", "Voice note", "Screenshot",
   ];
   check(entries.length === expected.length, `expected ${expected.length} entries, found ${entries.length}`);
+  // The kind each label's file name carries; a plain note has no file.
+  const fileKind = { Recording: "recording", "Voice note": "voice-note", Note: null };
   expected.forEach((label, i) => {
     const e = entries[i];
     if (!check(e, `entry ${i + 1} missing`)) return;
-    check(e.seq === i + 1, `entry ${i + 1} is numbered ${e.seq}`);
-    check(e.label === label, `entry ${i + 1} heading is "${e.label}", expected "${label}"`);
+    const kind = label.startsWith("Screenshot") ? "screenshot" : fileKind[label];
+    // A voice note keeps its audio only sometimes (checked below).
+    if (!(label === "Voice note" && e.kind === null)) check(e.kind === kind, `entry ${i + 1} links a ${e.kind ?? "no"} file, expected ${kind ?? "none"}`);
+    if (e.seq !== null) check(e.seq === i + 1, `entry ${i + 1} links file number ${e.seq}`);
     check(e.pageUrl?.startsWith(pageUrl), `entry ${i + 1} Page link is ${e.pageUrl ?? "missing"}, expected ${pageUrl}`);
   });
-  // One entry per capture: the user's words are a blockquote under the media; a plain note is the body.
-  const quoted = (i, text) => entries[i]?.block.includes(`\n> ${text}\n`);
-  check(quoted(0, shotNote), `the typed note is not quoted under screenshot 1: ${entries[0]?.block}`);
-  for (const i of [1, 2, 3, 7]) check(!/^>/m.test(entries[i]?.block ?? ""), `screenshot ${i + 1} should have no note: ${entries[i]?.block}`);
-  check(quoted(4, savedNote), `the note saved with the button is not under screenshot 5: ${entries[4]?.block}`);
-  check(entries[6]?.block.includes(`\n${popupNote}\n`) && !quoted(6, popupNote), `popup note is not the body of entry 7: ${entries[6]?.block}`);
+  // One entry per capture: the user's words first, then the file, then the page.
+  const quoted = (i, text) => entries[i]?.block.startsWith(`- ${text}`);
+  const hasWords = (block) => !/^- (!?\[|Page: )/.test(block);
+  check(quoted(0, shotNote), `the typed note does not lead screenshot 1: ${entries[0]?.block}`);
+  for (const i of [1, 2, 3, 7]) check(!hasWords(entries[i]?.block ?? "- "), `screenshot ${i + 1} should have no note: ${entries[i]?.block}`);
+  check(quoted(4, savedNote), `the note saved with the button does not lead screenshot 5: ${entries[4]?.block}`);
+  check(quoted(6, popupNote), `popup note is not the words of entry 7: ${entries[6]?.block}`);
   check(quoted(12, editedText), `the reviewed words are not the note of entry 13: ${entries[12]?.block}`);
   check(!/Transcript:/.test(notes), "notes.md still has a \"Transcript:\" prefix");
   check(entries[13]?.block.includes(dictatedNote), `the typed text is not in the dictated screenshot note (entry 14): ${entries[13]?.block}`);
   // A voice note with words keeps no audio by default; one with no words keeps it so it isn't empty.
-  check(/^🎙 \(\d+:\d\d\)$/m.test(entries[12]?.block ?? "") && !/\.webm/.test(entries[12]?.block ?? ""), `entry 13 should have no audio (keepAudio is off by default): ${entries[12]?.block}`);
+  check(entries[12] && !/\.webm/.test(entries[12].block), `entry 13 should have no audio (keepAudio is off by default): ${entries[12]?.block}`);
   // Recordings and voice notes with audio: the linked file exists and is WebM (EBML magic 1A 45 DF A3).
   for (const [i, e] of entries.entries()) {
-    if (!e || !["Recording", "Voice note"].includes(e.label)) continue;
+    const label = expected[i];
+    if (!e || !["Recording", "Voice note"].includes(label)) continue;
     const link = e.block.match(/\]\(\.\/([^)]+\.webm)\)/)?.[1];
     // Only a voice note with a note may come without audio (checked above).
-    if (e.label === "Voice note" && !link && /^> /m.test(e.block)) continue;
-    if (!check(link, `entry ${i + 1} (${e.label}) has no .webm link`)) continue;
+    if (label === "Voice note" && !link && hasWords(e.block)) continue;
+    if (!check(link, `entry ${i + 1} (${label}) has no .webm link`)) continue;
     const bytes = readFileSync(join(sessionDir, link));
     check(bytes.length > 1000 && bytes.readUInt32BE(0) === 0x1a45dfa3, `${link} is not a WebM file (${bytes.length} bytes)`);
-    log(`${e.label} #${i + 1}: ${link} ${bytes.length} bytes`);
+    log(`${label} #${i + 1}: ${link} ${bytes.length} bytes`);
   }
 
   const pngs = {};

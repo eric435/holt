@@ -464,12 +464,13 @@ describe("happy path", () => {
     const notes = await readFile(path.join(dir, "notes.md"), "utf8");
     expect(notes).toMatch(/^# Checkout pass \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n/);
     expect(notes).toContain(`- Project: ${tempDir}`);
-    expect(notes).toMatch(/## 1\. Screenshot · \d{2}:\d{2}:\d{2}\nPage: \[Checkout – My App\]\(http:\/\/localhost:5173\/checkout\)/);
-    expect(notes).toContain("![Screenshot 1](./001-screenshot.png)");
-    expect(notes).toContain("> Submit button overlaps the footer.");
-    expect(notes).toContain("## 2. Note");
-    expect(notes).toContain("Page: [\\](http://evil) sneaky](http://localhost:5173/checkout)");
-    expect(notes).toContain("Coupon field accepts whitespace-only input.");
+    expect(notes).toContain(
+      "- Submit button overlaps the footer. ![Screenshot 1](./001-screenshot.png) " +
+        "Page: [Checkout – My App](http://localhost:5173/checkout)\n",
+    );
+    expect(notes).toContain(
+      "- Coupon field accepts whitespace-only input. Page: [\\](http://evil) sneaky](http://localhost:5173/checkout)\n",
+    );
     expect(notes).toMatch(/_Session ended at .* \(2 entries\)\._\n$/);
   });
 

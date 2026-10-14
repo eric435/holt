@@ -14,8 +14,8 @@
  *    or image, and developers want to write `code` in their notes.
  *  - `<` `>`: raw HTML (`<img src=...>`), autolinks (`<http://...>`) and,
  *    at line start, blockquotes.
- *  - Leading `#` on a line: would start a heading, letting a note fake a new
- *    "## 7. Screenshot" entry.
+ *  - Leading `#` on a line: would start a heading in the middle of the
+ *    notes.
  *  - Leading ``` or ~~~: would open a code fence that never closes,
  *    swallowing every later entry into one code block. Escaping the first
  *    character is enough; inline code spans elsewhere stay usable.
@@ -54,14 +54,23 @@ export function escapeBlock(text: string): string {
 }
 
 /**
- * Render text as a blockquote, escaping every line. Each line gets its own
- * `> ` prefix, so a blank line in the middle of a note cannot end the quote
- * and let the rest of the note escape into the document.
+ * Render text as the body of a `- ` list item, escaping every line. Lines
+ * after the first are indented two spaces so they stay inside the item, and
+ * a blank line in the middle is followed by an indented one, so it cannot
+ * end the item and let the rest of the note escape into the document.
+ * Leading and trailing blank lines are dropped, and so is the first line's
+ * indentation (it would turn the item into a code block).
  */
-export function blockquote(text: string): string {
-  return splitLines(text)
-    .map((line) => (line.trim() === "" ? ">" : `> ${escapeLine(line)}`))
-    .join("\n");
+export function listItemBody(text: string): string {
+  const lines = escapeBlock(text.replace(/^(\s*\n)+/, "")).split("\n");
+  return lines
+    .map((line, i) => {
+      if (i === 0) return line.trim();
+      const trimmed = line.trimEnd();
+      return trimmed === "" ? "" : `  ${trimmed}`;
+    })
+    .join("\n")
+    .replace(/\n+$/, "");
 }
 
 /**

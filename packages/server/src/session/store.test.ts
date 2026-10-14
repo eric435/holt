@@ -131,7 +131,7 @@ describe("SessionStore", () => {
     expect(entry.id).toMatch(/^[0-9a-f-]{36}$/);
 
     const notes = await readFile(path.join(media.session.dir, "notes.md"), "utf8");
-    expect(notes.indexOf("## 2. Note")).toBeLessThan(notes.indexOf("## 1. Screenshot"));
+    expect(notes.indexOf("- between")).toBeLessThan(notes.indexOf("![Screenshot 1](./001-screenshot.png)"));
 
     await expect(
       store.addEntry({
@@ -162,7 +162,7 @@ describe("SessionStore", () => {
       );
     }
     expect(store.current?.entryCount).toBe(0);
-    expect(await readFile(path.join(shot.session.dir, "notes.md"), "utf8")).not.toMatch(/## \d/);
+    expect(await readFile(path.join(shot.session.dir, "notes.md"), "utf8")).not.toContain("](./");
 
     const { entry } = await store.addEntry({ ...base, kind: "screenshot", file: shot.file, mode: "area", width: 1, height: 1 });
     expect(entry.seq).toBe(1);

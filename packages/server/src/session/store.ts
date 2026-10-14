@@ -348,7 +348,7 @@ export class SessionStore {
    * its sequence number.
    *
    * Why the kind check: the kind is part of the file name, so without it
-   * "001-screenshot.png" could back a "🎬 Recording" and notes.md would say
+   * "001-screenshot.png" could back a recording and notes.md would say
    * one thing while the folder says another. An upload sent without
    * `x-holt-kind` is named "NNN-media.ext", which claims nothing, so any
    * media entry may use it.

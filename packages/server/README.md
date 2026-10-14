@@ -158,17 +158,8 @@ previous one. `notes.md` is append-only:
 
 ---
 
-## 1. Screenshot · 07:53:12
-Page: [Checkout – My App](http://localhost:5173/checkout)
-
-![Screenshot 1](./001-screenshot.png)
-
-> Submit button overlaps the footer on narrow widths.
-
-## 2. Note · 07:54:01
-Page: [Checkout – My App](http://localhost:5173/checkout)
-
-Coupon field accepts whitespace-only input.
+- Submit button overlaps the footer on narrow widths. ![Screenshot 1](./001-screenshot.png) Page: [Checkout – My App](http://localhost:5173/checkout)
+- Coupon field accepts whitespace-only input. Page: [Checkout – My App](http://localhost:5173/checkout)
 
 ---
 

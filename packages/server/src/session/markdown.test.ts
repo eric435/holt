@@ -57,7 +57,9 @@ describe("formatDuration", () => {
 });
 
 describe("renderEntry", () => {
-  it("renders a screenshot with its note", () => {
+  const PAGE = "Page: [Checkout – My App](http://localhost:5173/checkout)";
+
+  it("renders a screenshot as one line: note, image, page", () => {
     const entry: Entry = {
       ...meta,
       seq: 1,
@@ -65,41 +67,43 @@ describe("renderEntry", () => {
       capturedAt: local(7, 53, 12).toISOString(),
       page,
       file: "001-screenshot.png",
-      mode: "viewport",
+      mode: "area",
       width: 1280,
       height: 800,
       note: "Submit button overlaps the footer on narrow widths.",
     };
     expect(renderEntry(entry)).toBe(
-      [
-        "## 1. Screenshot · 07:53:12",
-        "Page: [Checkout – My App](http://localhost:5173/checkout)",
-        "",
-        "![Screenshot 1](./001-screenshot.png)",
-        "",
-        "> Submit button overlaps the footer on narrow widths.",
-        "",
-        "",
-      ].join("\n"),
+      `- Submit button overlaps the footer on narrow widths. ![Screenshot 1](./001-screenshot.png) ${PAGE}\n`,
     );
   });
 
-  it("labels full-page and area screenshots", () => {
-    const base = {
+  it("has no heading, number, time, kind label or icon", () => {
+    const out = renderEntry({
       ...meta,
       seq: 2,
-      kind: "screenshot" as const,
+      kind: "screenshot",
       capturedAt: local(8, 0, 0).toISOString(),
       page,
       file: "002-screenshot.png",
+      mode: "full-page",
       width: 1,
       height: 1,
-    };
-    expect(renderEntry({ ...base, mode: "full-page" })).toMatch(/^## 2\. Screenshot \(full page\) · 08:00:00\n/);
-    expect(renderEntry({ ...base, mode: "area" })).toMatch(/^## 2\. Screenshot \(area\) · /);
+    });
+    expect(out).not.toMatch(/^#|08:00|full page|🎙|🎬/m);
   });
 
-  it("renders a note entry as a paragraph", () => {
+  it("ends the note with a full stop when it stops on a letter or digit", () => {
+    const withNote = (note: string) =>
+      renderEntry({ ...meta, seq: 2, kind: "note", capturedAt: local(7, 54, 1).toISOString(), page, note });
+    expect(withNote("checking the velvet Thunder screenshot")).toBe(`- checking the velvet Thunder screenshot. ${PAGE}\n`);
+    expect(withNote("total shows 42")).toBe(`- total shows 42. ${PAGE}\n`);
+    expect(withNote("why is this here?")).toBe(`- why is this here? ${PAGE}\n`);
+    expect(withNote("steps:")).toBe(`- steps: ${PAGE}\n`);
+    // "- 2026." would start a numbered list inside the item.
+    expect(withNote("2026")).toBe(`- 2026 ${PAGE}\n`);
+  });
+
+  it("renders a note entry as its words and the page", () => {
     const entry: Entry = {
       ...meta,
       seq: 2,
@@ -108,32 +112,10 @@ describe("renderEntry", () => {
       page,
       note: "Coupon field accepts whitespace-only input.",
     };
-    expect(renderEntry(entry)).toBe(
-      [
-        "## 2. Note · 07:54:01",
-        "Page: [Checkout – My App](http://localhost:5173/checkout)",
-        "",
-        "Coupon field accepts whitespace-only input.",
-        "",
-        "",
-      ].join("\n"),
-    );
+    expect(renderEntry(entry)).toBe(`- Coupon field accepts whitespace-only input. ${PAGE}\n`);
   });
 
-  it("renders a note entry's words once, as the body (no blockquote)", () => {
-    const out = renderEntry({
-      ...meta,
-      seq: 2,
-      kind: "note",
-      capturedAt: local(7, 54, 1).toISOString(),
-      page,
-      note: "once",
-    });
-    expect(out.match(/once/g)).toHaveLength(1);
-    expect(out).not.toContain(">");
-  });
-
-  it("renders a screenshot without a note as just the image", () => {
+  it("renders a screenshot without a note as the image and the page", () => {
     const out = renderEntry({
       ...meta,
       seq: 1,
@@ -145,7 +127,7 @@ describe("renderEntry", () => {
       width: 1,
       height: 1,
     });
-    expect(out.endsWith("![Screenshot 1](./001-screenshot.png)\n\n")).toBe(true);
+    expect(out).toBe(`- ![Screenshot 1](./001-screenshot.png) ${PAGE}\n`);
   });
 
   it("renders a voice note with audio and its note", () => {
@@ -156,24 +138,16 @@ describe("renderEntry", () => {
       capturedAt: local(7, 55, 40).toISOString(),
       page: { url: "http://localhost:5173/cart", title: "Cart – My App" },
       file: "003-voice-note.webm",
-      note: "the quantity stepper jumps by two when I click fast.",
+      note: "the quantity stepper jumps by two when I click fast",
       durationMs: 12_000,
     };
     expect(renderEntry(entry)).toBe(
-      [
-        "## 3. Voice note · 07:55:40",
-        "Page: [Cart – My App](http://localhost:5173/cart)",
-        "",
-        "🎙 [audio](./003-voice-note.webm) (0:12)",
-        "",
-        "> the quantity stepper jumps by two when I click fast.",
-        "",
-        "",
-      ].join("\n"),
+      "- the quantity stepper jumps by two when I click fast. [audio](./003-voice-note.webm) (0:12) " +
+        "Page: [Cart – My App](http://localhost:5173/cart)\n",
     );
   });
 
-  it("renders a voice note without audio", () => {
+  it("renders a voice note without audio as just its words", () => {
     const entry: Entry = {
       ...meta,
       seq: 4,
@@ -183,7 +157,7 @@ describe("renderEntry", () => {
       note: "hello",
       durationMs: 3_000,
     };
-    expect(renderEntry(entry)).toContain("🎙 (0:03)\n\n> hello\n");
+    expect(renderEntry(entry)).toBe(`- hello. ${PAGE}\n`);
   });
 
   it("renders a recording", () => {
@@ -196,12 +170,10 @@ describe("renderEntry", () => {
       file: "005-recording.webm",
       durationMs: 42_000,
     };
-    expect(renderEntry(entry)).toContain("## 5. Recording · 07:57:00\n");
-    expect(renderEntry(entry)).toContain("🎬 [Recording 5](./005-recording.webm) (0:42)");
-    expect(renderEntry(entry)).not.toContain(">");
+    expect(renderEntry(entry)).toBe(`- [Recording 5](./005-recording.webm) (0:42) ${PAGE}\n`);
   });
 
-  it("renders a recording's narration under the link", () => {
+  it("indents a multi-line note under its item, with the links on their own line", () => {
     const entry: Entry = {
       ...meta,
       seq: 6,
@@ -210,9 +182,11 @@ describe("renderEntry", () => {
       page,
       file: "006-recording.webm",
       durationMs: 5_000,
-      note: "the menu flickers\n# not a heading",
+      note: "the menu flickers\n\n# not a heading",
     };
-    expect(renderEntry(entry)).toContain("🎬 [Recording 6](./006-recording.webm) (0:05)\n\n> the menu flickers\n> \\# not a heading\n");
+    expect(renderEntry(entry)).toBe(
+      `- the menu flickers\n\n  \\# not a heading.\n  [Recording 6](./006-recording.webm) (0:05) ${PAGE}\n`,
+    );
   });
 
   describe("escaping user-controlled text", () => {
@@ -248,13 +222,13 @@ describe("renderEntry", () => {
       );
     });
 
-    it("note text cannot inject images, HTML, or fake entry headings", () => {
+    it("note text cannot inject images, HTML, or headings", () => {
       const out = renderEntry(note({ note: "![x](http://evil/p.png)\n## 8. Screenshot · 00:00:00\n<img src=x>" }));
-      expect(out).toContain("!\\[x\\](http://evil/p.png)\n\\## 8. Screenshot · 00:00:00\n\\<img src=x\\>");
-      expect(out.match(/^## /gm)).toHaveLength(1);
+      expect(out).toContain("- !\\[x\\](http://evil/p.png)\n  \\## 8. Screenshot · 00:00:00\n  \\<img src=x\\>");
+      expect(out.match(/^ {0,3}#/gm)).toBeNull();
     });
 
-    it("multi-line notes stay inside their blockquote", () => {
+    it("multi-line notes stay inside their list item", () => {
       const shot: Entry = {
         ...meta,
         seq: 8,
@@ -267,7 +241,9 @@ describe("renderEntry", () => {
         height: 1,
         note: "line 1\n\n# not a heading\n> nested?",
       };
-      expect(renderEntry(shot)).toContain("> line 1\n>\n> \\# not a heading\n> \\> nested?\n");
+      expect(renderEntry(shot)).toBe(
+        `- line 1\n\n  \\# not a heading\n  \\> nested?\n  ![Screenshot 8](./008-screenshot.png) ${PAGE}\n`,
+      );
     });
   });
 });
@@ -275,7 +251,7 @@ describe("renderEntry", () => {
 describe("renderFooter", () => {
   it("renders the end marker with an entry count", () => {
     const endedAt = local(8, 10, 0);
-    expect(renderFooter(endedAt, 5)).toBe(`---\n\n_Session ended at ${formatLocalIso(endedAt)} (5 entries)._\n`);
+    expect(renderFooter(endedAt, 5)).toBe(`\n---\n\n_Session ended at ${formatLocalIso(endedAt)} (5 entries)._\n`);
     expect(renderFooter(endedAt, 1)).toContain("(1 entry)");
     expect(renderFooter(endedAt, 0)).toBe(`_Session ended at ${formatLocalIso(endedAt)} (0 entries)._\n`);
   });
@@ -326,54 +302,58 @@ describe("renderEntry: hostile notes keep the document's structure", () => {
     note,
   });
 
+  // Our own links, which may contain [ and ]; everything else is user text.
+  const OURS = /!\[Screenshot 9\]\(\.\/009-screenshot\.png\)|Page: \[Checkout – My App\]\(http:\/\/localhost:5173\/checkout\)/g;
+
   function expectSafe(out: string): void {
-    const lines = out.split("\n");
-    // Exactly one heading: ours, on the first line.
-    expect(lines.filter((l) => /^ {0,3}#{1,6}(\s|$)/.test(l))).toEqual([lines[0]]);
+    const lines = out.replace(/\n$/, "").split("\n");
+    // One list item: ours, on the first line. Every other line is blank or indented under it.
+    expect(lines[0]).toMatch(/^- /);
+    for (const line of lines.slice(1)) expect(line, line).toMatch(/^($|  )/);
+    // No heading at all.
+    expect(lines.filter((l) => /^\s*#{1,6}(\s|$)/.test(l))).toEqual([]);
     // No code fence can open.
-    expect(lines.some((l) => /^(\s*>)?\s*(```|~~~)/.test(l))).toBe(false);
+    expect(lines.some((l) => /^(- )?\s*(```|~~~)/.test(l))).toBe(false);
     // No setext underline or thematic break made of user text.
-    expect(lines.some((l) => /^(\s*>)?\s*([=*_-])[=*_ \t-]*$/.test(l) && l.trim() !== ">")).toBe(false);
-    // Every <, [ and ] in user text is escaped (the Page: line is ours).
-    for (const line of lines.slice(2)) {
-      if (line.startsWith("![Screenshot 9](./009-screenshot.png)")) continue;
-      expect(line, line).not.toMatch(/(^|[^\\])[<[\]]/);
+    expect(lines.some((l) => /^(- )?\s*([=*_-])[=*_ \t-]*$/.test(l))).toBe(false);
+    // Every <, [ and ] in user text is escaped.
+    for (const line of lines) {
+      expect(line.replace(OURS, ""), line).not.toMatch(/(^|[^\\])[<[\]]/);
     }
     // No control, zero-width or bidi characters survive.
     expect(out).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁦-⁩﻿]/);
-    // The entry ends with a blank line, so the next one starts cleanly.
-    expect(out.endsWith("\n\n")).toBe(true);
-    expect(out.endsWith("\n\n\n")).toBe(false);
+    // The entry ends with exactly one newline, so the next item starts cleanly.
+    expect(out.endsWith("\n")).toBe(true);
+    expect(out.endsWith("\n\n")).toBe(false);
   }
 
   it.each(HOSTILE_NOTES)("as a note body: %j", (note) => {
     expectSafe(renderEntry(asNote(note)));
   });
 
-  it.each(HOSTILE_NOTES)("as a screenshot's blockquote: %j", (note) => {
+  it.each(HOSTILE_NOTES)("as a screenshot's note: %j", (note) => {
     const out = renderEntry(asScreenshot(note));
     expectSafe(out);
-    // Every line after the image is part of the quote.
-    const quote = out.split("\n\n").slice(2).join("\n\n").replace(/\n+$/, "");
-    for (const line of quote.split("\n")) expect(line, line).toMatch(/^>( |$)/);
+    // The image and page close the item: on the last line, after the words.
+    expect(out).toMatch(/!\[Screenshot 9\]\(\.\/009-screenshot\.png\) Page: \[[^\n]*\n$/);
   });
 
   it("keeps a very long note in full (no truncation)", () => {
     const note = Array.from({ length: 5_000 }, (_, i) => `line ${i} ${"word ".repeat(10)}`).join("\n");
     const out = renderEntry(asScreenshot(note));
-    expect(out).toContain("> line 0 ");
-    expect(out).toContain("> line 4999 ");
-    expect(out.split("\n").filter((l) => l.startsWith("> line "))).toHaveLength(5_000);
+    expect(out).toContain("- line 0 ");
+    expect(out).toContain("\n  line 4999 ");
+    expect(out.split("\n").filter((l) => /^(- |  )line /.test(l))).toHaveLength(5_000);
   });
 
   it("keeps non-Latin text, combining marks and RTL scripts (only the override characters go)", () => {
     const note = "שלום عالم 日本語 café (é) 👍🏽";
-    expect(renderEntry(asNote(note))).toContain(`\n${note}\n`);
+    expect(renderEntry(asNote(note))).toContain(`- ${note} Page: `);
   });
 
   it("renders a voice note that has only words (no audio) with its words", () => {
     const out = renderEntry({ ...base, kind: "voice-note", durationMs: 3_000, note: "spoken" });
-    expect(out).toContain("🎙 (0:03)\n\n> spoken\n");
+    expect(out).toMatch(/^- spoken\. Page: /);
     expect(out).not.toContain("](./");
   });
 });

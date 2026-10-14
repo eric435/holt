@@ -99,11 +99,12 @@ Key decisions:
 
 ### Markdown format
 
-One capture is one entry: a heading, the page, the media (if any), and the
-user's words. Those words are the entry's `note` on every kind (typed in
-the note prompt after a screenshot, or dictated and reviewed for a
-recording or voice note) and render as a blockquote under the media; a
-plain note has no media, so its words are the body.
+One capture is one entry: a single list item with the user's words, the
+media file (if any), then the page it was taken on. Those words are the
+entry's `note` on every kind (typed in the note prompt after a screenshot,
+or dictated and reviewed for a recording or voice note). Entries carry no
+heading, number, time, kind label or icon; the file name says what the
+file is. Words that stop on a letter or digit get a full stop.
 
 ```markdown
 # QA session 2026-10-13 07:52
@@ -113,46 +114,25 @@ plain note has no media, so its words are the body.
 
 ---
 
-## 1. Screenshot · 07:53:12
-Page: [Checkout – My App](http://localhost:5173/checkout)
-
-![Screenshot 1](./001-screenshot.png)
-
-> Submit button overlaps the footer on narrow widths.
-
-## 2. Note · 07:54:01
-Page: [Checkout – My App](http://localhost:5173/checkout)
-
-Coupon field accepts whitespace-only input.
-
-## 3. Voice note · 07:55:40
-Page: [Cart – My App](http://localhost:5173/cart)
-
-🎙 (0:12)
-
-> The quantity stepper jumps by two when I click fast.
-
-## 4. Recording · 07:57:02
-Page: [Cart – My App](http://localhost:5173/cart)
-
-🎬 [Recording 4](./004-recording.webm) (0:42)
-
-> Here I add two items and the total doesn't update.
+- Submit button overlaps the footer on narrow widths. ![Screenshot 1](./001-screenshot.png) Page: [Checkout – My App](http://localhost:5173/checkout)
+- Coupon field accepts whitespace-only input. Page: [Checkout – My App](http://localhost:5173/checkout)
+- The quantity stepper jumps by two when I click fast. Page: [Cart – My App](http://localhost:5173/cart)
+- Here I add two items and the total doesn't update. [Recording 4](./004-recording.webm) (0:42) Page: [Cart – My App](http://localhost:5173/cart)
 ```
 
-A voice note links its audio (`🎙 [audio](./005-voice-note.webm) (0:12)`)
+A voice note links its audio (`[audio](./005-voice-note.webm) (0:12)`)
 only when the user keeps audio (off by default) or nothing was recognised.
-A screenshot nobody wrote anything about is just the image.
+A screenshot nobody wrote anything about is just the image and the page.
+A note of several lines keeps its line breaks, indented under the item,
+and the media and page go on their own indented line after it.
 
-Entry numbers can appear out of order, deliberately. A media entry's
-number is reserved when its file is uploaded (so `## 3. Screenshot` links
-`003-screenshot.png`), but the entry is appended only when it is posted.
-A screenshot is uploaded before its note prompt opens and posted when the
-prompt closes, so anything posted in between (an Alt+T note, say) gets a
-higher number and still lands above it: `## 4. Note` before
-`## 3. Screenshot`. We accept that rather than reorder: notes.md is
-append-only and never read back or rewritten, so a crash can lose at most
-the entry being written.
+Files can be numbered out of order, deliberately. A media file's number is
+reserved when it is uploaded (`003-screenshot.png`), but the entry is
+appended only when it is posted. A screenshot is uploaded before its note
+prompt opens and posted when the prompt closes, so anything posted in
+between (an Alt+T note, say) lands above it. We accept that rather than
+reorder: notes.md is append-only and never read back or rewritten, so a
+crash can lose at most the entry being written.
 
 Rendering is done by the server, never the extension, so the extension stays
 a thin capture client and the format can evolve in one place.

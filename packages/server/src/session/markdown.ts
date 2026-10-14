@@ -1,6 +1,6 @@
 /**
  * Renders the session's notes.md: a header when the session starts, one
- * block per entry, and a footer when it ends. The format is documented in
+ * list item per entry, and a footer when it ends. The format is documented in
  * docs/ARCHITECTURE.md ("Markdown format").
  *
  * These are pure functions (data in, string out) so the format can be tested
@@ -11,7 +11,7 @@
  * are not escaped because the server generated them (see naming.ts).
  */
 import type { Entry, PageContext } from "@holt/protocol";
-import { blockquote, escapeBlock, escapeInline, safeUrl } from "./escape.js";
+import { escapeInline, listItemBody, safeUrl } from "./escape.js";
 
 export interface HeaderInput {
   title: string;
@@ -41,56 +41,45 @@ export function renderHeader({ title, startedAt, root }: HeaderInput): string {
 export function renderFooter(endedAt: Date, entryCount: number): string {
   const line = `_Session ended at ${formatLocalIso(endedAt)} (${pluralEntries(entryCount)})._\n`;
   // With no entries, the header's own rule is right above; don't double it.
-  return entryCount === 0 ? line : `---\n\n${line}`;
+  // Otherwise a blank line first, so the rule cleanly ends the entry list.
+  return entryCount === 0 ? line : `\n---\n\n${line}`;
 }
 
+/**
+ * One `- ` list item per capture: the user's words, the media file (if
+ * any), then the page. A one-line note keeps it all on one line; a longer
+ * note's lines are indented under the item, with the media and page on
+ * their own line after it.
+ */
 export function renderEntry(entry: Entry): string {
-  const blocks: string[] = [];
-  const time = formatLocalTime(new Date(entry.capturedAt));
-  const heading = `## ${entry.seq}. ${entryLabel(entry)} · ${time}`;
-  const page = renderPage(entry.page);
-  blocks.push(page ? `${heading}\n${page}` : heading);
-
-  // Body (the media), then the user's words as a blockquote. A plain note
-  // has no media: its words are the body, so they render as a paragraph.
-  switch (entry.kind) {
-    case "screenshot":
-      blocks.push(`![Screenshot ${entry.seq}](./${entry.file})`);
-      break;
-    case "recording":
-      blocks.push(`🎬 [Recording ${entry.seq}](./${entry.file}) (${formatDuration(entry.durationMs)})`);
-      break;
-    case "voice-note":
-      blocks.push(
-        entry.file
-          ? `🎙 [audio](./${entry.file}) (${formatDuration(entry.durationMs)})`
-          : `🎙 (${formatDuration(entry.durationMs)})`,
-      );
-      break;
-    case "note":
-      blocks.push(escapeBlock(entry.note));
-      break;
-  }
-
-  if (entry.note && entry.kind !== "note") blocks.push(blockquote(entry.note));
-  return `${blocks.join("\n\n")}\n\n`;
+  const words = withFullStop(entry.note ? listItemBody(entry.note) : "");
+  const trailer = [renderMedia(entry), renderPage(entry.page)].filter(Boolean).join(" ");
+  if (!words) return `- ${trailer}\n`;
+  if (!trailer) return `- ${words}\n`;
+  return words.includes("\n") ? `- ${words}\n  ${trailer}\n` : `- ${words} ${trailer}\n`;
 }
 
-function entryLabel(entry: Entry): string {
+/** The entry's file as a link (an image for screenshots), or null. */
+function renderMedia(entry: Entry): string | null {
   switch (entry.kind) {
     case "screenshot":
-      // The default (viewport) stays plain "Screenshot" as in the documented
-      // format; the other modes are worth knowing when reading the notes.
-      if (entry.mode === "full-page") return "Screenshot (full page)";
-      if (entry.mode === "area") return "Screenshot (area)";
-      return "Screenshot";
+      return `![Screenshot ${entry.seq}](./${entry.file})`;
     case "recording":
-      return "Recording";
+      return `[Recording ${entry.seq}](./${entry.file}) (${formatDuration(entry.durationMs)})`;
     case "voice-note":
-      return "Voice note";
+      return entry.file ? `[audio](./${entry.file}) (${formatDuration(entry.durationMs)})` : null;
     case "note":
-      return "Note";
+      return null;
   }
+}
+
+/**
+ * End the words with a full stop when they stop on a letter or digit, so
+ * the links after them read as a separate sentence. A bare number is left
+ * alone: "2026." at the start of a list item would become a numbered list.
+ */
+function withFullStop(words: string): string {
+  return /[\p{L}\p{N}]$/u.test(words) && !/^\d+$/.test(words) ? `${words}.` : words;
 }
 
 /** `Page: [Title](url)`, or plain text if the URL is not http(s). */

@@ -3,7 +3,8 @@
  *
  * Every kind reads the same way, one item per capture: what it is, the page
  * it was taken on, the media file (if any), and the user's words (if any).
- * That mirrors what notes.md gets for the entry (server/src/session/markdown.ts).
+ * notes.md (server/src/session/markdown.ts) has the same parts minus the
+ * label and number: the words, the file, then the page.
  *
  * Pure so it is unit-tested; ui/entries.ts turns it into elements.
  */
@@ -35,8 +36,8 @@ export function entryView(entry: Entry): EntryView {
 
 /**
  * What each kind is called, the one place the panel spells it (the list's
- * titles, its "saved" toasts). notes.md's headings use the same words
- * (entry-view-parity.test.ts checks).
+ * titles, its "saved" toasts). notes.md has no labels; its file names
+ * carry the kind instead.
  */
 export const KIND_LABELS: Readonly<Record<Entry["kind"], string>> = {
   screenshot: "Screenshot",

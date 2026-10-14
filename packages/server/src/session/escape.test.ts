@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockquote, escapeBlock, escapeInline, safeUrl } from "./escape.js";
+import { escapeBlock, escapeInline, listItemBody, safeUrl } from "./escape.js";
 
 describe("escapeInline", () => {
   it("leaves ordinary text alone", () => {
@@ -81,7 +81,7 @@ describe("invisible and bidi characters", () => {
     (ch) => {
       expect(escapeInline(`a${ch}b`)).toBe("ab");
       expect(escapeBlock(`a${ch}b\nc${ch}`)).toBe("ab\nc");
-      expect(blockquote(`a${ch}b`)).toBe("> ab");
+      expect(listItemBody(`a${ch}b`)).toBe("ab");
     },
   );
 
@@ -90,11 +90,15 @@ describe("invisible and bidi characters", () => {
   });
 });
 
-describe("blockquote", () => {
-  it("prefixes every line, including blank ones, so the quote cannot be escaped", () => {
-    expect(blockquote("first\n\n## 2. Note · fake\n![x](http://evil)")).toBe(
-      "> first\n>\n> \\## 2. Note · fake\n> !\\[x\\](http://evil)",
+describe("listItemBody", () => {
+  it("indents every line after the first, so a blank line cannot end the item", () => {
+    expect(listItemBody("first\n\n## 2. Note · fake\n![x](http://evil)")).toBe(
+      "first\n\n  \\## 2. Note · fake\n  !\\[x\\](http://evil)",
     );
+  });
+
+  it("drops leading and trailing blank lines and the first line's indentation", () => {
+    expect(listItemBody("\n  \n    code?\n  kept\n\n")).toBe("code?\n    kept");
   });
 });
 
