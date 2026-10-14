@@ -1,6 +1,6 @@
 {
   "name": "@velvet-thunder/holt",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Local server for the holt Chrome extension: writes screenshots, recordings and QA notes straight into your repo as markdown. CLI + Vite plugin, zero dependencies.",
   "license": "MIT",
   "keywords": [
