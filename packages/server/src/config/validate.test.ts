@@ -11,7 +11,7 @@ describe("validateConfig", () => {
 
   it("accepts a full valid config and ignores $schema", () => {
     const raw = {
-      $schema: "./node_modules/holt/schema.json",
+      $schema: "./node_modules/holt-qa/schema.json",
       outputDir: "notes/qa",
       port: 0,
       host: "127.0.0.1",

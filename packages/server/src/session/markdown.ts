@@ -57,6 +57,7 @@ export function renderEntry(entry: Entry): string {
       break;
     case "recording":
       blocks.push(`🎬 [Recording ${entry.seq}](./${entry.file}) (${formatDuration(entry.durationMs)})`);
+      if (entry.transcript) blocks.push(blockquote(`Transcript: ${entry.transcript}`));
       break;
     case "voice-note":
       blocks.push(

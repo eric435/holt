@@ -56,6 +56,7 @@ export function parseEntryInput(body: unknown): EntryInput {
         ...base,
         file: requiredString(o, "file"),
         durationMs: nonNegativeNumber(o, "durationMs"),
+        ...optionalText(o, "transcript"),
       };
       return entry;
     }

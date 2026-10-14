@@ -21,7 +21,7 @@
       "minimum": 0,
       "maximum": 65535,
       "default": 4848,
-      "description": "Port for the standalone server (`npx holt`). Ignored by the Vite plugin, which uses Vite's port."
+      "description": "Port for the standalone server (`npx holt-qa`). Ignored by the Vite plugin, which uses Vite's port."
     },
     "host": {
       "type": "string",

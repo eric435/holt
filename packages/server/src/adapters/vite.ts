@@ -1,5 +1,5 @@
 /**
- * Vite plugin: `import holt from "holt/vite"`.
+ * Vite plugin: `import holt from "holt-qa/vite"`.
  *
  * Mounts the holt handler on Vite's dev server, so the extension talks
  * to the same origin as your app (e.g. http://localhost:5173/__holt/...)

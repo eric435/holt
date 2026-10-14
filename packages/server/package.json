@@ -1,6 +1,6 @@
 {
-  "name": "holt",
-  "version": "0.1.0",
+  "name": "holt-qa",
+  "version": "0.0.1",
   "description": "Local server for the holt Chrome extension: writes screenshots, recordings and QA notes straight into your repo as markdown. CLI + Vite plugin, zero dependencies.",
   "license": "MIT",
   "keywords": [
@@ -27,7 +27,7 @@
     "node": ">=20"
   },
   "bin": {
-    "holt": "./dist/cli.js"
+    "holt": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -18,8 +18,8 @@ localhost HTTP and writes the files. It has **zero runtime dependencies**.
 ## Install
 
 ```bash
-npm i -D holt
-# or: pnpm add -D holt / yarn add -D holt
+npm i -D holt-qa
+# or: pnpm add -D holt-qa / yarn add -D holt-qa
 ```
 
 Requires Node.js 20 or newer.
@@ -29,11 +29,15 @@ Requires Node.js 20 or newer.
 ### Standalone (any stack)
 
 ```bash
-npx holt
+npx holt-qa
 ```
 
+The package installs a command named `holt`: `npx holt-qa` runs it whether
+or not the package is installed, and once it is a dev dependency, `npx holt`
+works too.
+
 ```
-[holt] v0.1.0 serving my-app (from package.json) at http://127.0.0.1:4848/__holt
+[holt] v0.0.1 serving my-app (from package.json) at http://127.0.0.1:4848/__holt
 [holt] Writing sessions to /path/to/app/qa
 [holt] Connect: open the holt extension's side panel and set the server URL to http://127.0.0.1:4848
 ```
@@ -55,7 +59,7 @@ ends the active session cleanly.
 ```ts
 // vite.config.ts
 import { defineConfig } from "vite";
-import holt from "holt/vite";
+import holt from "holt-qa/vite";
 
 export default defineConfig({
   plugins: [holt()],
@@ -76,13 +80,13 @@ dev server.
 `>=5.4.12`). Earlier versions answer every dev-server request with
 `Access-Control-Allow-Origin: *`, so any web page you visit could read your
 app's source through the dev server. Vite is an optional peer: you only need
-it if you use `holt/vite`.
+it if you use `holt-qa/vite`.
 
 ### Programmatic
 
 ```ts
 import http from "node:http";
-import { createHolt } from "holt";
+import { createHolt } from "holt-qa";
 
 const holt = await createHolt({ cwd: process.cwd() });
 http.createServer(async (req, res) => {
@@ -97,12 +101,12 @@ drops into any node:http or connect-style middleware chain.
 ## Configuration
 
 `holt.config.json` in your project root. Every key is optional. Run
-`npx holt init` to create one with the defaults and a `$schema` for editor
+`npx holt-qa init` to create one with the defaults and a `$schema` for editor
 autocomplete.
 
 ```json
 {
-  "$schema": "./node_modules/holt/schema.json",
+  "$schema": "./node_modules/holt-qa/schema.json",
   "outputDir": "qa",
   "token": null
 }

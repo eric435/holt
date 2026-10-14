@@ -1,6 +1,6 @@
 /**
  * Standalone adapter: a bare node:http server that serves only holt.
- * This is what `npx holt` runs.
+ * This is what `npx holt-qa` runs.
  *
  * Responsibilities beyond "call the handler":
  *  - bind to config.host:config.port (loopback by default) and warn loudly

@@ -170,6 +170,21 @@ describe("renderEntry", () => {
     };
     expect(renderEntry(entry)).toContain("## 5. Recording · 07:57:00\n");
     expect(renderEntry(entry)).toContain("🎬 [Recording 5](./005-recording.webm) (0:42)");
+    expect(renderEntry(entry)).not.toContain("Transcript");
+  });
+
+  it("renders a recording's transcript under the link", () => {
+    const entry: Entry = {
+      ...meta,
+      seq: 6,
+      kind: "recording",
+      capturedAt: local(7, 58, 0).toISOString(),
+      page,
+      file: "006-recording.webm",
+      durationMs: 5_000,
+      transcript: "the menu flickers\n# not a heading",
+    };
+    expect(renderEntry(entry)).toContain("🎬 [Recording 6](./006-recording.webm) (0:05)\n\n> Transcript: the menu flickers\n> \\# not a heading\n");
   });
 
   describe("escaping user-controlled text", () => {

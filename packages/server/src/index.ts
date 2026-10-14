@@ -1,11 +1,11 @@
 /**
  * Public API of `holt`.
  *
- * Most people only use the CLI (`npx holt`) or the Vite plugin
- * (`holt/vite`). This entry is for mounting holt on some other
+ * Most people only use the CLI (`npx holt-qa`) or the Vite plugin
+ * (`holt-qa/vite`). This entry is for mounting holt on some other
  * node:http-based dev server, or for scripting:
  *
- *   import { createHolt } from "holt";
+ *   import { createHolt } from "holt-qa";
  *   const holt = await createHolt({ cwd: process.cwd() });
  *   server.on("request", async (req, res) => {
  *     if (await holt.handler(req, res)) return; // handled /__holt/*
