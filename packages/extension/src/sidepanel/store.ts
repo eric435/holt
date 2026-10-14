@@ -8,9 +8,9 @@
  */
 
 import type { SessionInfo, StatusResponse } from "@holt/protocol";
+import type { ServerSource } from "../shared/server-resolve.js";
 import { DEFAULT_SETTINGS, type Settings } from "../shared/settings.js";
 import type { ShortcutMap } from "../shared/shortcuts.js";
-import type { RecordingState } from "../shared/state.js";
 
 export type ServerState =
   | { kind: "checking" }
@@ -21,11 +21,15 @@ export interface PanelState {
   /** The browser window this panel belongs to. */
   windowId: number;
   settings: Settings;
+  /**
+   * The server for the active tab of this window, as last resolved
+   * (shared/server.ts); null until the first check. The session buttons
+   * act on it, and the status line says where it came from.
+   */
+  resolved: { serverUrl: string; source: ServerSource } | null;
   server: ServerState;
   /** Latest known session (from /status or from any upload response). */
   session: SessionInfo | null;
-  /** What is recording (mirrored from storage.session; the offscreen recorders and this panel write it). */
-  recording: RecordingState;
   /** Current keyboard shortcuts (chrome.commands.getAll()). */
   shortcuts: ShortcutMap;
 }
@@ -35,9 +39,9 @@ type Listener = (state: PanelState, previous: PanelState) => void;
 let state: PanelState = {
   windowId: -1,
   settings: { ...DEFAULT_SETTINGS },
+  resolved: null,
   server: { kind: "checking" },
   session: null,
-  recording: {},
   shortcuts: {},
 };
 const listeners = new Set<Listener>();

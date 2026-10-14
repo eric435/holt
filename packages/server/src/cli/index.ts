@@ -37,7 +37,7 @@ async function main(argv: string[]): Promise<void> {
     case "init": {
       const file = await writeStarterConfig(process.cwd(), cmd.force);
       logger.info(`Wrote ${file}`);
-      logger.info("Next: run `npx holt-qa` (or add the Vite plugin) and connect the extension.");
+      logger.info("Next: run `npx holt` (or add the Vite plugin) and connect the extension.");
       return;
     }
     case "serve": {

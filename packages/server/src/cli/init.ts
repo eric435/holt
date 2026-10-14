@@ -13,7 +13,7 @@ import { CONFIG_FILE_NAME } from "@holt/protocol";
 import { DEFAULTS } from "../config/defaults.js";
 
 export const STARTER_CONFIG = {
-  $schema: "./node_modules/holt-qa/schema.json",
+  $schema: "./node_modules/@velvet-thunder/holt/schema.json",
   outputDir: DEFAULTS.outputDir,
   port: DEFAULTS.port,
   host: DEFAULTS.host,

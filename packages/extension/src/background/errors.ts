@@ -43,8 +43,7 @@ export function friendlyRecordingError(error: unknown): string {
     return (
       "Chrome only lets holt record a tab after you invoke holt on it. " +
       "Press the record shortcut on the tab itself, or click the holt toolbar icon on it, then try again. " +
-      "(chrome:// pages and the Web Store can't be recorded at all.) " +
-      "Or use “Record a window or screen…” in the side panel."
+      "(chrome:// pages and the Web Store can't be recorded at all.)"
     );
   }
   if (/active stream/i.test(text)) {

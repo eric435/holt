@@ -1,11 +1,10 @@
 /**
- * Shared MediaRecorder plumbing for all three recorders: the tab recorder and
- * the voice recorder (both in the offscreen document) and the window/screen
- * recorder (side panel). Needs a document (MediaRecorder does not exist in a
- * service worker), so only pages import this.
+ * Shared MediaRecorder plumbing for both recorders in the offscreen document:
+ * the tab recorder and the voice recorder. Needs a document (MediaRecorder
+ * does not exist in a service worker), so only pages import this.
  */
 
-/** Video containers/codecs to try, best first (tab and window/screen recordings). */
+/** Video containers/codecs to try, best first (tab recordings). */
 export const VIDEO_TYPES = [
   "video/webm;codecs=vp9,opus",
   "video/webm;codecs=vp9",

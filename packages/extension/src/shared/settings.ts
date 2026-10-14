@@ -1,7 +1,8 @@
 /**
- * User settings: where the server is, the optional shared token, whether
- * voice notes keep their audio file, which microphone to record from, and
- * one UI flag (the shortcut hint was dismissed).
+ * User settings: how to find the server (auto-detect from the page, or one
+ * fixed URL), the fixed/fallback server URL, the optional shared token,
+ * whether voice notes keep their audio file, which microphone to record
+ * from, and one UI flag (the shortcut hint was dismissed).
  *
  * Storage: everything lives in `chrome.storage.local` (this device only).
  *  - Not `storage.sync`: a server URL synced to another of the user's
@@ -24,12 +25,29 @@ import { BASE_PATH, DEFAULT_HOST, DEFAULT_PORT } from "@holt/protocol";
 
 export const DEFAULT_SERVER_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 
+/**
+ * How the extension picks the server for a capture (shared/server-resolve.ts):
+ *  - "auto": if the page being captured is served from a loopback origin
+ *    that answers `GET /__holt/status` as holt (the Vite plugin), use that
+ *    origin; otherwise use `serverUrl`.
+ *  - "fixed": always use `serverUrl`, never probe.
+ */
+export type ServerMode = "auto" | "fixed";
+
 export interface Settings {
-  /** Origin of the holt server (standalone CLI or the Vite dev server). */
+  serverMode: ServerMode;
+  /**
+   * Origin of the holt server (standalone CLI or a dev server with the Vite
+   * plugin): the only server in "fixed" mode, the fallback in "auto" mode.
+   */
   serverUrl: string;
   /** Shared secret; empty string means "no token". */
   token: string;
-  /** Upload the audio of voice notes, not just the transcript. */
+  /**
+   * Upload the audio of voice notes, not just the reviewed transcript. Off
+   * by default: the words are what goes into notes.md, and the audio is
+   * kept anyway when recognition produced nothing usable.
+   */
   keepAudio: boolean;
   /**
    * `deviceId` from navigator.mediaDevices.enumerateDevices() of the
@@ -46,9 +64,10 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = {
+  serverMode: "auto",
   serverUrl: DEFAULT_SERVER_URL,
   token: "",
-  keepAudio: true,
+  keepAudio: false,
   microphoneId: "",
   microphoneLabel: "",
   hideShortcutHint: false,
@@ -130,12 +149,17 @@ export function validateServerUrl(raw: string): ServerUrlValidation {
 export function normalizeSettings(stored: Partial<Record<keyof Settings, unknown>>): Settings {
   const validated = typeof stored.serverUrl === "string" ? validateServerUrl(stored.serverUrl) : null;
   return {
+    serverMode: isServerMode(stored.serverMode) ? stored.serverMode : DEFAULT_SETTINGS.serverMode,
     serverUrl: validated?.ok ? validated.url : DEFAULT_SETTINGS.serverUrl,
     token: typeof stored.token === "string" ? stored.token.trim() : DEFAULT_SETTINGS.token,
     keepAudio: typeof stored.keepAudio === "boolean" ? stored.keepAudio : DEFAULT_SETTINGS.keepAudio,
     ...normalizeMicrophone(stored.microphoneId, stored.microphoneLabel),
     hideShortcutHint: stored.hideShortcutHint === true,
   };
+}
+
+export function isServerMode(value: unknown): value is ServerMode {
+  return value === "auto" || value === "fixed";
 }
 
 /**
@@ -237,16 +261,20 @@ export async function restrictStorageAccess(): Promise<void> {
 // Storage (thin wrappers over chrome.storage.local)
 // ---------------------------------------------------------------------------
 
-const KEYS = ["serverUrl", "token", "keepAudio", "microphoneId", "microphoneLabel", "hideShortcutHint"] as const;
+const KEYS = ["serverMode", "serverUrl", "token", "keepAudio", "microphoneId", "microphoneLabel", "hideShortcutHint"] as const;
 
 export async function loadSettings(): Promise<Settings> {
   await migrateFromSync();
   return normalizeSettings(await chrome.storage.local.get([...KEYS]));
 }
 
-/** Persist a partial update. Throws if serverUrl is invalid. */
+/** Persist a partial update. Throws if serverUrl or serverMode is invalid. */
 export async function saveSettings(update: Partial<Settings>): Promise<Settings> {
   const patch: Record<string, unknown> = {};
+  if (update.serverMode !== undefined) {
+    if (!isServerMode(update.serverMode)) throw new Error(`Unknown server mode "${String(update.serverMode)}".`);
+    patch.serverMode = update.serverMode;
+  }
   if (update.serverUrl !== undefined) {
     const v = validateServerUrl(update.serverUrl);
     if (!v.ok) throw new Error(v.error);

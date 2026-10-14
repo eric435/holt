@@ -8,6 +8,9 @@
  * changed because site data was cleared), `exact` makes getUserMedia fail
  * with OverconstrainedError (or NotFoundError), and we retry with the
  * default microphone and tell the user.
+ *
+ * Shared (not offscreen-only) because the screenshot note prompt
+ * (note/note.ts) dictates with the same microphone as the recorders.
  */
 
 export function microphoneConstraints(deviceId: string): MediaStreamConstraints {

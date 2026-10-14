@@ -11,18 +11,19 @@
  *    for the first instead;
  *  - create/close/start are serialised through one queue, so "close because
  *    idle" can never interleave with "start a new recording" and close the
- *    document under it.
+ *    document under it. (Whether to start or stop at all is decided one
+ *    toggle at a time in recording.ts, which has its own queue.)
  *
  * Created lazily when a recording starts; closed when the document reports
- * `recorder:idle` (nothing recording, nothing uploading) and a fresh status
+ * `recorder:idle` (nothing recording, nothing waiting to be saved) and a fresh status
  * check agrees. An open offscreen document costs a renderer process, so we
  * don't keep it around.
  *
  * Reason: USER_MEDIA covers getUserMedia, including redeeming a
  * chrome.tabCapture stream id (as in Chrome's own tab-capture sample). We
  * don't use DISPLAY_MEDIA: getDisplayMedia needs a click in the calling
- * document, which an invisible document never gets, so window/screen
- * recording stays in the side panel. (Note: AUDIO_PLAYBACK would make
+ * document, which an invisible document never gets (and holt records tabs
+ * only, see offscreen/tab.ts). (Note: AUDIO_PLAYBACK would make
  * Chrome close the document after 30 s of silence; we don't use it, and
  * playing captured tab audio back works under USER_MEDIA.)
  */
@@ -44,7 +45,7 @@ function serialized<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-export async function hasOffscreenDocument(): Promise<boolean> {
+async function hasOffscreenDocument(): Promise<boolean> {
   const contexts = await chrome.runtime.getContexts({
     contextTypes: ["OFFSCREEN_DOCUMENT" as chrome.runtime.ContextType],
     documentUrls: [OFFSCREEN_URL],
@@ -103,7 +104,7 @@ export function closeOffscreenIfIdle(): Promise<void> {
   return serialized(async () => {
     if (!(await hasOffscreenDocument())) return;
     const status = await sendMessage({ type: "offscreen:status" }).catch(() => null);
-    if (status && (status.tab || status.voice || status.uploading > 0)) return;
+    if (status && (status.tab || status.voice || status.finishing > 0)) return;
     await chrome.offscreen.closeDocument().catch((error: unknown) => console.warn("[holt] closing the offscreen document failed", error));
   });
 }

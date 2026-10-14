@@ -1,5 +1,5 @@
 {
-  "name": "holt-qa",
+  "name": "@velvet-thunder/holt",
   "version": "0.0.1",
   "description": "Local server for the holt Chrome extension: writes screenshots, recordings and QA notes straight into your repo as markdown. CLI + Vite plugin, zero dependencies.",
   "license": "MIT",
@@ -34,11 +34,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./vite": {
       "types": "./dist/vite.d.ts",
-      "import": "./dist/vite.js"
+      "import": "./dist/vite.js",
+      "default": "./dist/vite.js"
     },
     "./schema.json": "./schema.json",
     "./package.json": "./package.json"
@@ -53,11 +55,13 @@
     "build": "node scripts/copy-license.mjs && tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check-pack": "node scripts/check-pack.mjs"
+    "check-pack": "node scripts/check-pack.mjs",
+    "prepublishOnly": "pnpm build && node scripts/check-pack.mjs"
   },
   "peerDependencies": {
-    "vite": ">=5.4.12"
+    "vite": "^5.4.12 || >=6.0.9"
   },
   "peerDependenciesMeta": {
     "vite": {

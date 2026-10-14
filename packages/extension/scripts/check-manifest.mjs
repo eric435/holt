@@ -32,6 +32,7 @@ const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
 const referenced = new Set([
   manifest.background?.service_worker,
   manifest.side_panel?.default_path,
+  manifest.action?.default_popup,
   ...Object.values(manifest.icons ?? {}),
   ...Object.values(manifest.action?.default_icon ?? {}),
 ]);
@@ -40,11 +41,14 @@ for (const file of referenced) {
   if (typeof file === "string") check(exists(file), `manifest references missing file: ${file}`);
 }
 check(manifest.manifest_version === 3, "manifest_version must be 3");
+// The menu must be the action's popup: a click on the icon opens it, and
+// note.html hands the popup slot back to it (src/shared/pages.ts).
+check(manifest.action?.default_popup === "menu.html", "action.default_popup must be menu.html");
 check(manifest.background?.type === "module", "background.type must be 'module' (background.js is ESM)");
 check(/^\d+(\.\d+){0,3}$/.test(manifest.version), `invalid version: ${manifest.version}`);
 
 // 2. Files referenced from HTML pages (script src / link href / img src).
-for (const page of ["sidepanel.html", "permissions.html", "offscreen.html", "note.html"]) {
+for (const page of ["sidepanel.html", "permissions.html", "offscreen.html", "note.html", "menu.html"]) {
   check(exists(page), `missing ${page}`);
   if (!exists(page)) continue;
   const html = readFileSync(join(dist, page), "utf8").replace(/<!--[\s\S]*?-->/g, ""); // ignore comments
@@ -55,7 +59,7 @@ for (const page of ["sidepanel.html", "permissions.html", "offscreen.html", "not
 }
 
 // 3. Injected content scripts.
-for (const file of ["content/area-select.js", "content/page-helper.js"]) {
+for (const file of ["content/area-select.js", "content/page-helper.js", "content/voice-overlay.js"]) {
   check(exists(file), `content script not emitted: ${file}`);
   if (!exists(file)) continue;
   const code = readFileSync(join(dist, file), "utf8");

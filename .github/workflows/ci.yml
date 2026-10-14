@@ -26,7 +26,7 @@ jobs:
       # allow-list (tests, source maps, a stray .env) or declares a runtime
       # dependency. See packages/server/scripts/check-pack.mjs.
       - name: Check published files
-        run: pnpm --filter holt check-pack
+        run: pnpm --filter @velvet-thunder/holt check-pack
       # Load the built extension in a real headless Chrome and fail on any
       # startup error, forged-message acceptance, or storage leak.
       - name: Extension smoke test

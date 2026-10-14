@@ -51,28 +51,28 @@ export function renderEntry(entry: Entry): string {
   const page = renderPage(entry.page);
   blocks.push(page ? `${heading}\n${page}` : heading);
 
+  // Body (the media), then the user's words as a blockquote. A plain note
+  // has no media: its words are the body, so they render as a paragraph.
   switch (entry.kind) {
     case "screenshot":
       blocks.push(`![Screenshot ${entry.seq}](./${entry.file})`);
       break;
     case "recording":
       blocks.push(`🎬 [Recording ${entry.seq}](./${entry.file}) (${formatDuration(entry.durationMs)})`);
-      if (entry.transcript) blocks.push(blockquote(`Transcript: ${entry.transcript}`));
       break;
     case "voice-note":
       blocks.push(
         entry.file
           ? `🎙 [audio](./${entry.file}) (${formatDuration(entry.durationMs)})`
-          : `🎙 (${formatDuration(entry.durationMs)}, transcript only)`,
+          : `🎙 (${formatDuration(entry.durationMs)})`,
       );
-      if (entry.transcript) blocks.push(blockquote(`Transcript: ${entry.transcript}`));
       break;
     case "note":
-      blocks.push(escapeBlock(entry.text));
+      blocks.push(escapeBlock(entry.note));
       break;
   }
 
-  if (entry.note) blocks.push(blockquote(entry.note));
+  if (entry.note && entry.kind !== "note") blocks.push(blockquote(entry.note));
   return `${blocks.join("\n\n")}\n\n`;
 }
 

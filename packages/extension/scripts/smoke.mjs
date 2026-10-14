@@ -13,13 +13,17 @@
  *      note without microphone permission fails fast and offers
  *      permissions.html in the panel, the side panel page renders without
  *      errors and migrates legacy storage.sync settings to storage.local, the on-demand content scripts work on a local fixture page
- *      (page-helper metrics/scroll/restore incl. hiding and restoring the
+ *      (with no holt server anywhere, the badge turns into a red "!" on the
+ *      fixture's loopback page, and the toolbar menu says "Not connected";
+ *      page-helper metrics/scroll/restore incl. hiding and restoring the
  *      fixed header; content scripts can't read storage and their forged
- *      capture/toast messages are refused; area-select overlay idempotency
+ *      menu:run/toast messages and a forged answer (or draft) for the
+ *      screenshot note prompt are refused; area-select overlay idempotency
  *      and the Esc-cancel round trip back to the panel as a toast), and a
- *      simulated toolbar click both opens the side panel and grants
- *      activeTab (captureVisibleTab succeeds), and page-helper metrics taken
- *      as soon as the panel starts narrowing the page wait for the final width.
+ *      simulated toolbar click opens the menu and grants activeTab
+ *      (captureVisibleTab succeeds), its Settings item opens the side panel,
+ *      and page-helper metrics taken as soon as the panel starts narrowing
+ *      the page wait for the final width.
  *
  * Usage: pnpm --filter @holt/extension smoke   (build first)
  * Env:   CHROME_PATH=/path/to/chrome   to use another Chrome/Chromium.
@@ -102,7 +106,7 @@ async function run(headless) {
     const offscreenAtStart = (await cdp.send("Target.getTargets")).targetInfos.some((t) => t.url.endsWith("/offscreen.html"));
     expect(!offscreenAtStart, "an offscreen document exists before anything was recorded");
     const behavior = await evaluate(cdp, worker.sessionId, "chrome.sidePanel.getPanelBehavior()");
-    // We open the panel from action.onClicked instead (see background/index.ts).
+    // A click on the icon shows the menu (action popup), not the panel (see background/index.ts).
     expect(behavior?.openPanelOnActionClick === false, "openPanelOnActionClick should be false");
     log(`commands: ${commands.join(", ")}; openPanelOnActionClick=${behavior?.openPanelOnActionClick}`);
 
@@ -118,7 +122,8 @@ async function run(headless) {
     await cdp.send("Page.navigate", { url: panelUrl }, panel);
     await sleep(ERROR_WINDOW_MS);
     const panelText = await evaluate(cdp, panel, "document.body.textContent"); // innerText would apply text-transform
-    expect(panelText.includes("Capture") && panelText.includes("Settings"), "side panel did not render its sections");
+    expect(panelText.includes("This session") && panelText.includes("Settings"), "side panel did not render its sections");
+    expect(!panelText.includes("Capture"), "side panel still has the Capture section (capturing moved to the toolbar menu)");
     const serverLine = await evaluate(cdp, panel, "document.querySelector('.server-line')?.innerText ?? ''");
     log(`side panel rendered; server line: "${serverLine.replace(/\s+/g, " ").slice(0, 120)}"`);
     const stores = await evaluate(cdp, worker.sessionId, `Promise.all([chrome.storage.sync.get(null), chrome.storage.local.get(null)])`);
@@ -153,6 +158,26 @@ async function run(headless) {
       await cdp.send("Page.enable", {}, page);
       await sleep(800);
 
+      // No holt anywhere: the fixture's origin answers every path with HTML
+      // (not holt), and the fallback URL (localhost:4999, migrated above) is
+      // closed. On a loopback page that is the red "!" badge.
+      await cdp.send("Target.activateTarget", { targetId: pageTarget });
+      const noServer = await waitFor(
+        async () => {
+          const info = await evaluate(cdp, worker.sessionId, `chrome.storage.session.get("serverInfo").then(s => s.serverInfo ?? null)`);
+          const text = await evaluate(cdp, worker.sessionId, "chrome.action.getBadgeText({})");
+          return info?.localPage && text === "!" ? { info, text, title: await evaluate(cdp, worker.sessionId, "chrome.action.getTitle({})") } : null;
+        },
+        { timeoutMs: 8_000, what: "the red '!' badge on a loopback page without holt" },
+      ).catch((e) => (problems.push(e.message), null));
+      if (noServer) {
+        expect(noServer.info.ok === false && noServer.info.source === "fallback" && noServer.info.serverUrl === "http://localhost:4999", `serverInfo on the fixture page: ${JSON.stringify(noServer.info)}`);
+        expect(/^holt: no server for this page — Can't reach the holt server at http:\/\/localhost:4999/.test(noServer.title), `badge tooltip without a server: ${noServer.title}`);
+        const probes = await evaluate(cdp, worker.sessionId, `chrome.storage.session.get("serverProbes").then(s => s.serverProbes ?? {})`);
+        expect(probes[fixtureUrl.replace(/\/$/, "")]?.ok === false, `the fixture origin was not probed (or not cached as 'not holt'): ${JSON.stringify(probes)}`);
+        log(`no server: badge "${noServer.text}", tooltip "${noServer.title.slice(0, 90)}…", probed ${Object.keys(probes).join(", ")}`);
+      }
+
       const result = await evaluate(
         cdp,
         worker.sessionId,
@@ -172,8 +197,12 @@ async function run(headless) {
           await chrome.tabs.sendMessage(tab.id, { type: "helper:restore" });
           const [{ result: headerAfterRestore }] = await headerState();
           const [{ result: afterRestore }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => scrollY });
+          // A screenshot waiting for its note: a page must not be able to answer for the user.
+          const pendingShot = { id: "smoke-pending", page: { url: tab.url, title: tab.title }, capturedAt: new Date().toISOString(),
+            file: "001-screenshot.png", mode: "viewport", width: 1, height: 1, windowId: tab.windowId, tabId: tab.id, at: Date.now() };
+          await chrome.storage.session.set({ pendingScreenshot: pendingShot });
           // Security probes, run as a content script (isolated world) in the page:
-          // storage must be off limits, forged capture/toast must be refused.
+          // storage must be off limits, a forged menu command or toast must be refused.
           const [{ result: probes }] = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: async (windowId) => {
@@ -184,21 +213,29 @@ async function run(headless) {
               } catch (e) {
                 storage = "denied: " + e.message;
               }
-              const capture = await chrome.runtime.sendMessage({ type: "capture", mode: "viewport", windowId })
+              // The toolbar menu's request: what a page would forge to trigger a capture or a recording.
+              const menuRun = await chrome.runtime.sendMessage({ type: "menu:run", command: "screenshot-viewport", windowId })
                 .catch((e) => ({ error: e.message }));
               const toast = await chrome.runtime.sendMessage({ type: "toast", level: "error", message: "forged-by-content-script" })
                 .then((r) => ({ answered: r }), (e) => ({ error: e.message }));
               // New in the offscreen-recorder design: none of these may be accepted from a page.
               const answer = (m) => chrome.runtime.sendMessage(m).then((r) => r ?? null, (e) => ({ error: e.message }));
-              const toggle = await answer({ type: "recorder:toggle", recorder: "voice", windowId });
+              const toggle = await answer({ type: "menu:run", command: "toggle-voice", windowId });
               const created = await answer({ type: "entry-created", entry: { id: "x", seq: 1 }, session: { id: "s" } });
               const stopped = await answer({ type: "recorder:stopped", recorder: "voice", id: "x" });
               const startVoice = await answer({ type: "offscreen:start-voice", id: "x", page: { url: "", title: "" },
                 settings: { serverUrl: "http://evil.example", token: "", keepAudio: true, microphoneId: "", microphoneLabel: "" } });
-              return { storage, capture, toast, toggle, created, stopped, startVoice };
+              const noteFinish = await answer({ type: "screenshot-note:finish", id: "smoke-pending", note: "forged-by-content-script" });
+              const noteDraft = await answer({ type: "screenshot-note:draft", id: "smoke-pending", draft: "forged-by-content-script" });
+              const serverRefresh = await answer({ type: "server-info:refresh" });
+              return { storage, menuRun, toast, toggle, created, stopped, startVoice, noteFinish, noteDraft, serverRefresh };
             },
             args: [tab.windowId],
           });
+          const { pendingScreenshot: pendingAfterProbe } = await chrome.storage.session.get("pendingScreenshot");
+          probes.pendingKept = pendingAfterProbe?.id === "smoke-pending";
+          probes.draftKept = pendingAfterProbe?.draft === undefined;
+          await chrome.storage.session.remove("pendingScreenshot");
           // What startAreaSelection would record before injecting the overlay,
           // so the Esc below is accepted as coming from the pending tab.
           await chrome.storage.session.set({ pendingArea: { tabId: tab.id, windowId: tab.windowId,
@@ -227,14 +264,19 @@ async function run(headless) {
 
         const { probes } = result;
         expect(probes.storage.startsWith("denied"), `content scripts can read chrome.storage.local (${probes.storage})`);
-        expect(probes.capture?.ok === false && /side panel/.test(probes.capture.error ?? ""), `forged capture from a content script was not refused: ${JSON.stringify(probes.capture)}`);
+        expect(probes.menuRun?.ok === false && /toolbar menu/.test(probes.menuRun.error ?? ""), `forged menu:run (screenshot) from a content script was not refused: ${JSON.stringify(probes.menuRun)}`);
         expect(!probes.toast.answered, `forged toast from a content script was answered: ${JSON.stringify(probes.toast)}`);
-        expect(probes.toggle?.ok === false && /side panel/.test(probes.toggle.error ?? ""), `forged recorder:toggle was not refused: ${JSON.stringify(probes.toggle)}`);
-        for (const key of ["created", "stopped", "startVoice"]) {
+        expect(probes.toggle?.ok === false && /toolbar menu/.test(probes.toggle.error ?? ""), `forged menu:run (voice note) was not refused: ${JSON.stringify(probes.toggle)}`);
+        for (const key of ["created", "stopped", "startVoice", "serverRefresh"]) {
           expect(probes[key] === null || probes[key]?.error, `forged ${key} from a content script was answered: ${JSON.stringify(probes[key])}`);
         }
-        log(`forged recorder messages: toggle -> ${JSON.stringify(probes.toggle)}; entry-created/recorder:stopped/offscreen:start-voice -> ${["created", "stopped", "startVoice"].map((k) => JSON.stringify(probes[k])).join(", ")}`);
-        log(`content-script probes: storage ${probes.storage.slice(0, 60)}; capture -> ${JSON.stringify(probes.capture)}; toast -> ${probes.toast.error ?? (probes.toast.answered === undefined ? "no response (ignored)" : JSON.stringify(probes.toast.answered))}`);
+        expect(probes.noteFinish?.ok === false && /note prompt/.test(probes.noteFinish.error ?? ""), `forged screenshot-note:finish was not refused: ${JSON.stringify(probes.noteFinish)}`);
+        expect(probes.pendingKept, "a forged screenshot-note:finish consumed the pending screenshot");
+        expect(probes.noteDraft?.ok === false && /note prompt/.test(probes.noteDraft.error ?? ""), `forged screenshot-note:draft was not refused: ${JSON.stringify(probes.noteDraft)}`);
+        expect(probes.draftKept, "a forged screenshot-note:draft changed the pending screenshot's draft");
+        log(`forged screenshot note: ${JSON.stringify(probes.noteFinish)}, draft: ${JSON.stringify(probes.noteDraft)}; pending screenshot kept=${probes.pendingKept}, draft untouched=${probes.draftKept}`);
+        log(`forged recorder messages: menu:run toggle-voice -> ${JSON.stringify(probes.toggle)}; entry-created/recorder:stopped/offscreen:start-voice/server-info:refresh -> ${["created", "stopped", "startVoice", "serverRefresh"].map((k) => JSON.stringify(probes[k])).join(", ")}`);
+        log(`content-script probes: storage ${probes.storage.slice(0, 60)}; menu:run screenshot -> ${JSON.stringify(probes.menuRun)}; toast -> ${probes.toast.error ?? (probes.toast.answered === undefined ? "no response (ignored)" : JSON.stringify(probes.toast.answered))}`);
 
         // Press Esc in the page: overlay removes itself, sends area-cancelled,
         // the worker broadcasts a toast, and the open panel shows it.
@@ -252,12 +294,32 @@ async function run(headless) {
         log(`area-select: 1 overlay after double injection; Esc removed it=${overlaysAfterEsc === 0}; panel toast=${toastSeen}`);
       }
 
-      // ---- 5. toolbar click: opens the panel AND grants activeTab ---------
+      // ---- 5. toolbar click: opens the menu AND grants activeTab; Settings opens the panel
       // Record every width the page goes through while the panel opens.
       await evaluate(cdp, page, `window.__holtWidths = [innerWidth]; addEventListener("resize", () => __holtWidths.push(innerWidth)); true`);
       let triggered = false;
       try {
         await clickToolbarIcon(cdp, worker.extensionId, fixtureUrl);
+        const menuUrl = `chrome-extension://${worker.extensionId}/menu.html`;
+        const menuTarget = await waitFor(async () => (await cdp.send("Target.getTargets")).targetInfos.find((t) => t.url === menuUrl), { what: "the toolbar menu" });
+        const menu = await attach(cdp, menuTarget.targetId);
+        await collector.watch(menu);
+        await waitFor(() => evaluate(cdp, menu, "document.querySelectorAll('.menu-item').length > 0"), { what: "the menu items" });
+        // No server for this page: the menu says so, and offers the settings.
+        const menuProblem = await waitFor(
+          () => evaluate(cdp, menu, "(() => { const p = document.getElementById('problem'); return p && !p.hidden ? p.innerText : null; })()"),
+          { timeoutMs: 3_000, what: "the menu's 'Not connected' line" },
+        ).catch(() => null);
+        expect(/^Not connected/.test(menuProblem ?? "") && /localhost:4999/.test(menuProblem ?? "") && /Open settings/.test(menuProblem ?? ""), `menu problem line: ${JSON.stringify(menuProblem)}`);
+        const menuWidth = await evaluate(cdp, menu, "document.body.scrollWidth");
+        expect(menuWidth <= 260, `the menu is ${menuWidth}px wide with the problem line (should stay 260px)`);
+        log(`menu without a server: ${JSON.stringify((menuProblem ?? "").replace(/\s+/g, " "))} (${menuWidth}px wide)`);
+        // A real click is a user gesture, which sidePanel.open() needs.
+        const { exceptionDetails } = await cdp.send("Runtime.evaluate", {
+          expression: "[...document.querySelectorAll('.menu-item')].find(b => b.textContent.includes('Settings')).click()",
+          userGesture: true,
+        }, menu);
+        if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
         triggered = true;
       } catch (error) {
         log(`skipping toolbar-click check: ${error.message}`);
@@ -296,9 +358,9 @@ async function run(headless) {
              .then(t => chrome.tabs.captureVisibleTab(t.windowId, { format: "jpeg", quality: 1 }))
              .then(() => true, (e) => String(e.message ?? e))`,
         );
-        expect(panels.length > 0, "toolbar click did not open the side panel");
+        expect(panels.length > 0, "the menu's Settings item did not open the side panel");
         expect(canCapture === true, `toolbar click did not grant activeTab: ${canCapture}`);
-        log(`toolbar click: side panel opened=${panels.length > 0}; activeTab granted=${canCapture === true}`);
+        log(`toolbar click -> menu -> Settings: side panel opened=${panels.length > 0}; activeTab granted=${canCapture === true}`);
       }
       await sleep(300);
     } finally {

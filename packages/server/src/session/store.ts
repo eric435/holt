@@ -79,8 +79,14 @@ interface ActiveSession {
   entryCount: number;
   /** Highest sequence number handed out so far (entries and media share it). */
   lastSeq: number;
-  /** Uploaded media not yet referenced by an entry: file name -> its seq. */
-  pendingMedia: Map<string, number>;
+  /** Uploaded media not yet referenced by an entry, by file name. */
+  pendingMedia: Map<string, PendingMedia>;
+}
+
+interface PendingMedia {
+  seq: number;
+  /** The upload's `x-holt-kind`, which is also in its file name. */
+  kind: MediaKind;
 }
 
 export interface ReservedMedia {
@@ -188,7 +194,7 @@ export class SessionStore {
       const seq = this.nextSeq();
       const file = mediaFileName(seq, kind, ext);
       const filePath = this.resolveMediaPath(file);
-      session.pendingMedia.set(file, seq);
+      session.pendingMedia.set(file, { seq, kind });
       return { session: this.toInfo(session), sessionGeneration: session.generation, seq, file, path: filePath };
     });
   }
@@ -233,7 +239,7 @@ export class SessionStore {
       let seq: number;
       const file = "file" in input ? input.file : undefined;
       if (file !== undefined) {
-        seq = await this.claimMedia(session, file);
+        seq = await this.claimMedia(session, file, input.kind);
       } else {
         seq = this.nextSeq();
       }
@@ -338,23 +344,36 @@ export class SessionStore {
 
   /**
    * Check that an entry's `file` is a media file uploaded in this session
-   * and not used by another entry yet, and return its sequence number.
+   * for this kind of entry and not used by another entry yet, and return
+   * its sequence number.
+   *
+   * Why the kind check: the kind is part of the file name, so without it
+   * "001-screenshot.png" could back a "🎬 Recording" and notes.md would say
+   * one thing while the folder says another. An upload sent without
+   * `x-holt-kind` is named "NNN-media.ext", which claims nothing, so any
+   * media entry may use it.
    */
-  private async claimMedia(session: ActiveSession, file: string): Promise<number> {
+  private async claimMedia(session: ActiveSession, file: string, entryKind: EntryInput["kind"]): Promise<number> {
     if (!isPlainFileName(file)) {
       throw new SessionError(`"file" must be a bare file name returned by the media upload`);
     }
-    const seq = session.pendingMedia.get(file);
-    if (seq === undefined) {
+    const pending = session.pendingMedia.get(file);
+    if (pending === undefined) {
       throw new SessionError(
         `"file" ${JSON.stringify(file)} is not an unused upload in the current session; upload it first`,
+      );
+    }
+    if (pending.kind !== "media" && pending.kind !== entryKind) {
+      throw new SessionError(
+        `"file" ${JSON.stringify(file)} was uploaded for a different entry kind ` +
+          `(${pending.kind}, not ${entryKind}); upload it with ${JSON.stringify(entryKind)} as the kind`,
       );
     }
     const info = await stat(this.resolveMediaPath(file)).catch(() => null);
     if (!info?.isFile()) {
       throw new SessionError(`"file" ${JSON.stringify(file)} does not exist in the current session`);
     }
-    return seq;
+    return pending.seq;
   }
 
   private requireActive(): ActiveSession {

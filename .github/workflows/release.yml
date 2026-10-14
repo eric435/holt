@@ -1,0 +1,59 @@
+name: Release
+
+# Publishes @velvet-thunder/holt to npm. Runs on a pushed version tag
+# (`v0.1.0`), or by hand from the Actions tab. See CONTRIBUTING.md,
+# "Releasing".
+#
+# Why CI and not `npm publish` from a laptop: the package sets
+# `publishConfig.provenance`, and npm can only generate a provenance
+# statement from a CI run with an OIDC identity (`id-token: write`). A local
+# publish fails on purpose, so every release is built from a commit anyone
+# can inspect.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Never run two publishes of the same ref at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # Writes an .npmrc that reads the token from NODE_AUTH_TOKEN.
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      # A tag that disagrees with package.json would publish a version
+      # nobody tagged; fail before anything is built.
+      - name: Check the tag matches the package version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(node -p "require('./packages/server/package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match packages/server/package.json version $version" >&2
+            exit 1
+          fi
+      - run: pnpm typecheck && pnpm build && pnpm test
+      - name: Check published files
+        run: pnpm --filter @velvet-thunder/holt check-pack
+      # --no-git-checks: a tag checkout is a detached HEAD, which pnpm's
+      # "must be on the publish branch" check would reject.
+      - name: Publish
+        run: pnpm --filter @velvet-thunder/holt publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

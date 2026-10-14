@@ -11,13 +11,15 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/**' run build",
     "test": "pnpm -r --filter './packages/**' run test",
+    "test:coverage": "pnpm -r --filter \"./packages/**\" run test:coverage",
     "typecheck": "pnpm -r --filter './packages/**' run typecheck",
-    "dev:server": "pnpm --filter holt run dev",
+    "dev:server": "pnpm --filter @velvet-thunder/holt run dev",
     "dev:extension": "pnpm --filter @holt/extension run dev"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "esbuild": "^0.24.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",

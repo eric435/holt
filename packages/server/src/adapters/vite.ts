@@ -1,5 +1,5 @@
 /**
- * Vite plugin: `import holt from "holt-qa/vite"`.
+ * Vite plugin: `import holt from "@velvet-thunder/holt/vite"`.
  *
  * Mounts the holt handler on Vite's dev server, so the extension talks
  * to the same origin as your app (e.g. http://localhost:5173/__holt/...)
@@ -17,9 +17,12 @@
  *    Vite on loopback (its default) to keep the API off the network. If
  *    Vite listens on the network without a holt token, we warn; the
  *    handler refuses non-local requests in that case anyway.
- *  - Requires Vite >= 5.4.12 (see the peer range): older versions answer
- *    every request with `Access-Control-Allow-Origin: *`, letting any web
- *    page read your app's source and the session files they serve.
+ *  - Requires Vite 5.4.12+ or 6.0.9+ (the peer range is
+ *    `^5.4.12 || >=6.0.9`): older versions, including 6.0.0-6.0.8, answer
+ *    every request with `Access-Control-Allow-Origin: *`
+ *    (GHSA-vg6x-rcgg-rjx6), letting any web page read your app's source
+ *    and the session files they serve. A plain `>=5.4.12` would admit
+ *    those 6.0.x releases.
  *  - Ending the session when the dev server closes: `closeBundle` is the
  *    hook Vite *awaits* inside `server.close()` (on SIGTERM, the `q`
  *    shortcut, and config restarts), and Vite calls `process.exit()` right
@@ -105,7 +108,14 @@ export default function holt(options: HoltViteOptions = {}): Plugin {
         }
         const origin = originOf(address);
         logger.info(`serving ${project} at ${origin}${BASE_PATH}, writing sessions to ${current.config.outputDir}`);
-        logger.info(`Connect: set the holt extension's server URL to ${origin}`);
+        // The extension probes the origin of the page it captures (only on
+        // loopback), so pages Vite serves need no setup. Pages served by
+        // another backend that only uses Vite for assets don't come from
+        // this origin: those need the fallback URL.
+        logger.info(`Connect: nothing to set up. The holt extension detects holt on pages served from ${origin}.`);
+        logger.info(
+          `If your pages come from another server (Vite behind Rails, Laravel, Django, ...), set the extension's fallback server URL to ${origin}.`,
+        );
       });
       httpServer.once("close", () => {
         current.close().catch((err: unknown) => logger.error(`failed to close session: ${String(err)}`));

@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  The toolbar menu: what a click on holt's icon shows (manifest
+  action.default_popup). No inline script or handlers (MV3 CSP): all
+  behaviour is in menu.js (src/menu/menu.ts).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>holt</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+    <script type="module" src="menu.js"></script>
+  </head>
+  <body class="menu-popup">
+    <header class="menu-header">
+      <img src="icons/icon-32.png" alt="" width="16" height="16" />
+      <strong>holt</strong>
+      <span id="project" class="muted"></span>
+    </header>
+    <div id="problem" class="menu-problem" role="status" hidden>
+      <strong>Not connected</strong>
+      <div id="problem-text" class="menu-problem-text"></div>
+      <button id="problem-settings" type="button" class="secondary">Open settings</button>
+    </div>
+    <div id="items" class="menu-items" role="menu" aria-label="holt"></div>
+    <div id="status" class="menu-status error-text" role="status" hidden></div>
+  </body>
+</html>

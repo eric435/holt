@@ -1,6 +1,6 @@
 /**
- * Microphone picker (in Settings: it is a set-once preference, and the
- * Capture card shows the mic in use under the Voice note button).
+ * Microphone picker (in Settings: it is a set-once preference; while a
+ * voice note runs, the toolbar icon's tooltip names the microphone in use).
  *
  * Devices come from navigator.mediaDevices.enumerateDevices(). Chrome hides
  * details until the extension's origin has microphone permission: before

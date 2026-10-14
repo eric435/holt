@@ -43,12 +43,9 @@ button {
   font: inherit; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent);
   color: var(--accent-text); padding: 6px 10px; cursor: pointer;
 }
-button.secondary, button.toggle { background: transparent; color: var(--text); border-color: var(--border); }
+button.secondary { background: transparent; color: var(--text); border-color: var(--border); }
 button.link { background: none; border: none; color: var(--accent); padding: 0 4px; text-decoration: underline; }
 button:disabled { opacity: 0.5; cursor: default; }
-button.big { padding: 12px 8px; font-weight: 600; width: 100%; }
-button.toggle.active { border-color: var(--danger); color: var(--danger); }
-button.attention { outline: 3px solid var(--warn); }
 
 input[type="text"], input[type="url"], input[type="password"], textarea {
   font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
@@ -57,18 +54,13 @@ input[type="text"], input[type="url"], input[type="password"], textarea {
 textarea { resize: vertical; }
 label { display: grid; gap: 4px; margin-top: 8px; }
 label.check { display: flex; align-items: center; gap: 6px; }
+fieldset.server-mode { border: none; margin: 8px 0 0; padding: 0; min-width: 0; }
+fieldset.server-mode legend { padding: 0; }
+fieldset.server-mode label.check { margin-top: 4px; }
 
 .row { display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .row input[type="text"] { flex: 1 1 140px; }
 .row.end { justify-content: flex-end; }
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
-.stack { display: grid; gap: 2px; justify-items: center; align-content: start; }
-.busy { opacity: 0.7; }
-
-.timer { font-variant-numeric: tabular-nums; color: var(--danger); min-height: 1.2em; }
-.transcript { margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--bg); min-height: 2.5em; }
-.interim { color: var(--muted); }
 
 .muted { color: var(--muted); }
 .hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -91,7 +83,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: br
 .entry:first-child { border-top: none; padding-top: 0; }
 .entry-page { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-text { white-space: pre-wrap; }
-.entry-note { margin-top: 4px; }
 
 details summary { cursor: pointer; font-weight: 600; }
 
@@ -110,11 +101,8 @@ details summary { cursor: pointer; font-weight: 600; }
 /* Server line: project first, prominent; tool/version/host muted. */
 .server-line .project { font-size: 14px; }
 
-/* Capture card extras */
-.mic-hint { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.display-row { display: grid; gap: 0; justify-items: start; }
-.display-row .link { padding: 0; }
-.shortcut-hint { display: flex; gap: 6px; align-items: flex-start; margin-top: 8px; font-size: 12px; color: var(--muted); }
+/* "Set the remaining shortcuts" tip under the cards */
+.shortcut-hint { display: flex; gap: 6px; align-items: flex-start; padding: 0 4px; font-size: 12px; color: var(--muted); }
 .shortcut-hint span { flex: 1; }
 .ok-text { color: var(--ok); }
 
@@ -132,3 +120,33 @@ body.note-popup.in-window { width: auto; }
 .note-popup form { display: grid; gap: 6px; }
 .note-popup .note-page { margin: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-footer { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.note-buttons { display: flex; gap: 6px; flex: none; }
+/* The screenshot note prompt's dictation: what is being recognised right now, greyed out under the text. */
+.note-interim { color: var(--muted); font-style: italic; min-height: 1.45em; overflow-wrap: anywhere; }
+#mic[aria-pressed="true"] { border-color: var(--danger); color: var(--danger); }
+
+/* menu.html: the toolbar menu (an action popup, sized to its content). */
+body.menu-popup { width: 260px; padding: 6px; background: var(--card); }
+.menu-header { display: flex; align-items: center; gap: 6px; padding: 4px 8px 8px; }
+.menu-header .muted { margin-left: auto; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+.menu-items { display: grid; gap: 1px; }
+button.menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: transparent; border: none; border-radius: 6px; color: var(--text); padding: 7px 8px;
+}
+button.menu-item:hover, button.menu-item:focus-visible { background: var(--bg); outline: none; }
+button.menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+button.menu-item.stop { color: var(--danger); font-weight: 600; }
+.menu-icon { flex: none; color: var(--muted); }
+.menu-item.stop .menu-icon { color: var(--danger); }
+.menu-label { flex: 1; }
+.menu-side { color: var(--muted); font-size: 12px; }
+.menu-side kbd { color: var(--muted); }
+.menu-timer { font-variant-numeric: tabular-nums; color: var(--danger); }
+.menu-divider { border: none; border-top: 1px solid var(--border); margin: 4px 2px; }
+.menu-status { padding: 6px 8px 2px; font-size: 12px; }
+/* No holt server for this page: what's wrong, and the way to the settings. */
+.menu-problem { display: grid; gap: 4px; justify-items: start; margin: 0 2px 6px; padding: 6px 8px 8px; border-radius: 6px; font-size: 12px; color: var(--danger); background: var(--bg); overflow-wrap: anywhere; }
+.menu-problem[hidden] { display: none; }
+.menu-problem-text { color: var(--text); }
+.menu-problem button { font-size: 12px; padding: 3px 8px; }

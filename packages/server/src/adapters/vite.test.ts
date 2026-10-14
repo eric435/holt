@@ -118,6 +118,10 @@ describe("holt() Vite plugin", () => {
       messages.some((m) => m.includes(`serving vite-app (from package.json) at http://127.0.0.1:5173${BASE_PATH}`)),
     ).toBe(true);
     expect(messages.every((m) => m.startsWith("[holt]"))).toBe(true);
+    // The extension auto-detects holt on this origin; the URL is only needed as a fallback.
+    expect(messages.some((m) => m.includes("detects holt on pages served from http://127.0.0.1:5173"))).toBe(true);
+    expect(messages.some((m) => m.includes("fallback server URL to http://127.0.0.1:5173"))).toBe(true);
+    expect(messages.some((m) => m.includes("set the holt extension's server URL"))).toBe(false);
   });
 
   it("reports projectName from plugin options in /status", async () => {
@@ -213,5 +217,81 @@ describe("holt() Vite plugin", () => {
     await expect(configure(holt({ outputDir: 42 as unknown as string }), server)).rejects.toThrow(
       /holt\(\) Vite plugin options[\s\S]*"outputDir"/,
     );
+  });
+});
+
+describe("holt() Vite plugin: middleware order and shutdown", () => {
+  const callHook = async (plugin: Plugin, name: "closeBundle") => {
+    const hook = plugin[name];
+    const fn = typeof hook === "function" ? hook : hook?.handler;
+    await fn?.call({} as never);
+  };
+
+  /** Run one mounted middleware against a bare request; say whether it called next() or answered. */
+  function runMiddleware(use: ReturnType<typeof vi.fn>, index: number, url: string) {
+    const middleware = use.mock.calls[index]?.[0] as Connect.NextHandleFunction;
+    const res = Object.assign(new EventEmitter(), { statusCode: 200, end: vi.fn(), setHeader: vi.fn() });
+    const next = vi.fn();
+    middleware({ url, method: "GET", headers: {} } as Connect.IncomingMessage, res as never, next);
+    return { next, res };
+  }
+
+  it("mounts the output-dir guard first and the API handler second", async () => {
+    const { server, use } = stubServer();
+    await configure(holt(), server);
+    // The first middleware answers 404 for the session folder itself...
+    const guarded = runMiddleware(use, 0, "/qa/2026-10-13-075200/notes.md");
+    expect(guarded.next).not.toHaveBeenCalled();
+    expect(guarded.res.statusCode).toBe(404);
+    // ...and passes the API through untouched: it is not the handler.
+    expect(runMiddleware(use, 0, `${BASE_PATH}/status`).next).toHaveBeenCalledTimes(1);
+    // The second one is the handler: it falls through for the app's own paths.
+    const app = runMiddleware(use, 1, "/src/main.ts");
+    await vi.waitFor(() => expect(app.next).toHaveBeenCalledTimes(1));
+    expect(app.res.end).not.toHaveBeenCalled();
+  });
+
+  it("guards the output dir even for paths under the API prefix or with dot segments", async () => {
+    const { server, use } = stubServer();
+    await configure(holt(), server);
+    const origin = await serveMiddlewares(use);
+    await fetch(`${origin}${BASE_PATH}/session/start`, { method: "POST", headers: EXT_HEADERS });
+    for (const p of [`${BASE_PATH}/../qa/.gitignore`, `/src/../qa/.gitignore`]) {
+      const res = await fetch(`${origin}${p}`);
+      expect(res.status, p).not.toBe(200);
+      expect(await res.text(), p).not.toContain("*");
+    }
+  });
+
+  it("closeBundle before configureServer (vite build, or a failed start) is a no-op", async () => {
+    await expect(callHook(holt(), "closeBundle")).resolves.toBeUndefined();
+  });
+
+  it("ending twice (closeBundle, then the http server's close) writes one end marker", async () => {
+    const { server, use, httpServer } = stubServer();
+    const plugin = holt();
+    await configure(plugin, server);
+    const origin = await serveMiddlewares(use);
+    const res = await fetch(`${origin}${BASE_PATH}/session/start`, { method: "POST", headers: EXT_HEADERS });
+    const { session } = (await res.json()) as SessionResponse;
+    const notesPath = path.join(session?.dir ?? "", "notes.md");
+
+    await callHook(plugin, "closeBundle");
+    await callHook(plugin, "closeBundle");
+    httpServer?.emit("close");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await readFile(notesPath, "utf8")).match(/_Session ended at/g)).toHaveLength(1);
+  });
+
+  it.each([
+    [{ address: "::1", family: "IPv6", port: 5173 }, "http://[::1]:5173"],
+    [{ address: "::", family: "IPv6", port: 5173 }, "http://localhost:5173"],
+    [{ address: "0.0.0.0", family: "IPv4", port: 4000 }, "http://localhost:4000"],
+  ])("prints a usable origin when Vite listens on %j", async (address, origin) => {
+    const httpServer = Object.assign(new EventEmitter(), { address: () => address });
+    const { server, logger } = stubServer(httpServer);
+    await configure(holt({ token: "t" }), server);
+    httpServer.emit("listening");
+    expect(logger.info.mock.calls.map((c) => String(c[0])).join("\n")).toContain(`at ${origin}${BASE_PATH}`);
   });
 });

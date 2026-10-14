@@ -27,7 +27,7 @@ const note = (text: string): EntryInput => ({
   kind: "note",
   capturedAt: clock.toISOString(),
   page: { url: "http://localhost/", title: "Home" },
-  text,
+  note: text,
 });
 
 describe("SessionStore", () => {
@@ -142,6 +142,44 @@ describe("SessionStore", () => {
         durationMs: 1,
       }),
     ).rejects.toThrow(/not an unused upload/);
+  });
+
+  it("rejects an entry whose upload was made for a different kind, and leaves the upload claimable", async () => {
+    const store = createStore();
+    const shot = await store.reserveMedia("screenshot", "png");
+    await writeFile(shot.path, "png-bytes");
+    const base = { capturedAt: clock.toISOString(), page: { url: "", title: "" } };
+
+    for (const input of [
+      { ...base, kind: "recording", file: shot.file, durationMs: 1 },
+      { ...base, kind: "voice-note", file: shot.file, durationMs: 1 },
+    ] as EntryInput[]) {
+      const error = await store.addEntry(input).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(SessionError);
+      expect((error as SessionError).reason).toBe("invalid");
+      expect((error as SessionError).message).toMatch(
+        /"001-screenshot\.png" was uploaded for a different entry kind \(screenshot, not (recording|voice-note)\)/,
+      );
+    }
+    expect(store.current?.entryCount).toBe(0);
+    expect(await readFile(path.join(shot.session.dir, "notes.md"), "utf8")).not.toMatch(/## \d/);
+
+    const { entry } = await store.addEntry({ ...base, kind: "screenshot", file: shot.file, mode: "area", width: 1, height: 1 });
+    expect(entry.seq).toBe(1);
+  });
+
+  it("an upload without a kind ('media') can back any media entry", async () => {
+    const store = createStore();
+    const media = await store.reserveMedia("media", "webm");
+    await writeFile(media.path, "webm");
+    const { entry } = await store.addEntry({
+      kind: "voice-note",
+      capturedAt: clock.toISOString(),
+      page: { url: "", title: "" },
+      file: media.file,
+      durationMs: 1,
+    });
+    expect(entry).toMatchObject({ seq: 1, file: "001-media.webm" });
   });
 
   it("rejects entries for files that were reserved but never written", async () => {
@@ -272,6 +310,120 @@ describe("SessionStore", () => {
     it("throws when no session is active", () => {
       expect(() => createStore().resolveMediaPath("001-x.png")).toThrow(/No active session/);
     });
+  });
+});
+
+describe("SessionStore: media claims and session ends under concurrency", () => {
+  const screenshotFor = (file: string): EntryInput => ({
+    kind: "screenshot",
+    capturedAt: clock.toISOString(),
+    page: { url: "http://localhost/", title: "Home" },
+    file,
+    mode: "viewport",
+    width: 1,
+    height: 1,
+  });
+
+  it("two entries racing for the same upload: exactly one gets it", async () => {
+    const store = createStore();
+    const media = await store.reserveMedia("screenshot", "png");
+    await writeFile(media.path, "png");
+
+    const results = await Promise.allSettled([store.addEntry(screenshotFor(media.file)), store.addEntry(screenshotFor(media.file))]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(rejected.reason).toBeInstanceOf(SessionError);
+    expect(String(rejected.reason)).toMatch(/not an unused upload/);
+
+    const notes = await readFile(path.join(media.session.dir, "notes.md"), "utf8");
+    expect(notes.match(/001-screenshot\.png/g)).toHaveLength(1);
+    expect(store.current?.entryCount).toBe(1);
+  });
+
+  it("an upload from an ended session cannot be claimed by the next one, and stays where it was", async () => {
+    const store = createStore();
+    const old = await store.reserveMedia("screenshot", "png");
+    await writeFile(old.path, "png");
+    clock = new Date(2026, 9, 13, 8, 0, 0);
+    const fresh = await store.start();
+
+    await expect(store.addEntry(screenshotFor(old.file))).rejects.toThrow(/not an unused upload/);
+    expect(await readdir(old.session.dir)).toEqual(["001-screenshot.png", "notes.md"]);
+    expect(await readFile(path.join(fresh.dir, "notes.md"), "utf8")).not.toContain("screenshot.png");
+  });
+
+  it("a released reservation cannot be claimed, even if a file appears at its path", async () => {
+    const store = createStore();
+    const media = await store.reserveMedia("screenshot", "png");
+    store.releaseMedia(media);
+    await writeFile(media.path, "png");
+    await expect(store.addEntry(screenshotFor(media.file))).rejects.toThrow(/not an unused upload/);
+  });
+
+  it("uploads nobody wrote an entry for are left on disk, unlinked, and not counted", async () => {
+    const store = createStore();
+    const media = await store.reserveMedia("screenshot", "png");
+    await writeFile(media.path, "png");
+    await store.addEntry(note("only this"));
+    const ended = await store.stop();
+
+    expect(ended?.entryCount).toBe(1);
+    const notes = await readFile(path.join(media.session.dir, "notes.md"), "utf8");
+    expect(notes).not.toContain(media.file);
+    expect(notes).toMatch(/\(1 entry\)\._\n$/);
+    expect(await readdir(media.session.dir)).toContain(media.file);
+  });
+
+  it("stop() racing with an entry: the entry is written before the end marker", async () => {
+    const store = createStore();
+    const session = await store.start();
+    await Promise.all([store.addEntry(note("last words")), store.stop()]);
+    const notes = await readFile(path.join(session.dir, "notes.md"), "utf8");
+    expect(notes.indexOf("last words")).toBeGreaterThan(-1);
+    expect(notes.indexOf("last words")).toBeLessThan(notes.indexOf("_Session ended"));
+    expect(notes).toContain("(1 entry)");
+  });
+
+  it("two stops at once write one end marker; the second reports no session", async () => {
+    const store = createStore();
+    const session = await store.start();
+    const [a, b] = await Promise.all([store.stop(), store.stop()]);
+    expect(a?.id).toBe(session.id);
+    expect(b).toBeNull();
+    const notes = await readFile(path.join(session.dir, "notes.md"), "utf8");
+    expect(notes.match(/_Session ended/g)).toHaveLength(1);
+  });
+
+  it("an entry after stop() starts a new session instead of writing into the ended one", async () => {
+    const store = createStore();
+    const first = await store.start();
+    await store.stop();
+    clock = new Date(2026, 9, 13, 8, 0, 0);
+    const { session } = await store.addEntry(note("after"));
+    expect(session.id).not.toBe(first.id);
+    expect(await readFile(path.join(first.dir, "notes.md"), "utf8")).not.toContain("after");
+  });
+
+  it("a voice note with words only takes a fresh sequence number; with audio, its upload's", async () => {
+    const store = createStore();
+    const audio = await store.reserveMedia("voice-note", "webm");
+    await writeFile(audio.path, "webm");
+    const wordsOnly = await store.addEntry({
+      kind: "voice-note",
+      capturedAt: clock.toISOString(),
+      page: { url: "", title: "" },
+      durationMs: 1000,
+      note: "words",
+    });
+    const withAudio = await store.addEntry({
+      kind: "voice-note",
+      capturedAt: clock.toISOString(),
+      page: { url: "", title: "" },
+      durationMs: 1000,
+      file: audio.file,
+    });
+    expect(wordsOnly.entry.seq).toBe(2);
+    expect(withAudio.entry.seq).toBe(1);
   });
 });
 

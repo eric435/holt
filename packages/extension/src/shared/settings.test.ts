@@ -54,9 +54,10 @@ describe("isLoopbackHost", () => {
 describe("normalizeSettings", () => {
   it("fills defaults", () => {
     expect(normalizeSettings({})).toEqual({
+      serverMode: "auto",
       serverUrl: DEFAULT_SERVER_URL,
       token: "",
-      keepAudio: true,
+      keepAudio: false,
       microphoneId: "",
       microphoneLabel: "",
       hideShortcutHint: false,
@@ -64,24 +65,31 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({})).toEqual(DEFAULT_SETTINGS);
   });
   it("drops invalid stored values", () => {
-    expect(normalizeSettings({ serverUrl: "ftp://x", token: 42, keepAudio: "yes", microphoneId: 7, microphoneLabel: "x", hideShortcutHint: "true" })).toEqual(
+    expect(normalizeSettings({ serverMode: "manual", serverUrl: "ftp://x", token: 42, keepAudio: "yes", microphoneId: 7, microphoneLabel: "x", hideShortcutHint: "true" })).toEqual(
       DEFAULT_SETTINGS,
     );
+  });
+  it("auto-detects the server unless told otherwise", () => {
+    expect(normalizeSettings({ serverMode: "auto" }).serverMode).toBe("auto");
+    expect(normalizeSettings({ serverMode: "fixed" }).serverMode).toBe("fixed");
+    expect(normalizeSettings({ serverMode: 1 }).serverMode).toBe("auto");
   });
   it("keeps valid stored values", () => {
     expect(
       normalizeSettings({
+        serverMode: "fixed",
         serverUrl: "http://localhost:5173/",
         token: " s3cret ",
-        keepAudio: false,
+        keepAudio: true,
         microphoneId: "abc123",
         microphoneLabel: " USB Mic ",
         hideShortcutHint: true,
       }),
     ).toEqual({
+      serverMode: "fixed",
       serverUrl: "http://localhost:5173",
       token: "s3cret",
-      keepAudio: false,
+      keepAudio: true,
       microphoneId: "abc123",
       microphoneLabel: "USB Mic",
       hideShortcutHint: true,
@@ -116,6 +124,10 @@ describe("planSyncMigration", () => {
       toLocal: { serverUrl: "http://localhost:5173", keepAudio: false },
       removeFromSync: ["serverUrl", "keepAudio"],
     });
+  });
+
+  it("carries an explicit synced keepAudio: true over, even though the default is now false", () => {
+    expect(planSyncMigration({ keepAudio: true }, {})).toEqual({ toLocal: { keepAudio: true }, removeFromSync: ["keepAudio"] });
   });
 
   it("keeps values already set locally", () => {

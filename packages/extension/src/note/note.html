@@ -1,9 +1,14 @@
 <!doctype html>
 <!--
-  The quick-note page (Alt+T). Shown as the toolbar action's popup, set just
-  in time by the worker (src/background/note-popup.ts), or, if Chrome can't
-  open the popup, in a small popup window (?window=1). No inline script or
-  handlers (MV3 CSP): all behaviour is in note.js (src/note/note.ts).
+  The note page, in two modes (src/shared/note-prompt.ts):
+   - the quick note (Alt+T): shown as the toolbar action's popup, set just in
+     time by the worker (src/background/note-popup.ts), or, if Chrome can't
+     open the popup, in a small popup window (?window=1);
+   - the note prompt after a screenshot (?mode=screenshot&id=…), always in a
+     popup window (src/background/pending-screenshot.ts), with Skip and a
+     dictation button; Esc saves what is typed, and skips only an empty note.
+  No inline script or handlers (MV3 CSP): all behaviour is in note.js
+  (src/note/note.ts).
 -->
 <html lang="en">
   <head>
@@ -16,10 +21,16 @@
   <body class="note-popup">
     <form id="form">
       <label for="text" class="note-page" id="page">Note</label>
-      <textarea id="text" rows="4" autofocus placeholder="What's wrong on this page?"></textarea>
+      <!-- maxlength: the server's limit for a note (ENTRY_FIELD_LIMITS.note). -->
+      <textarea id="text" rows="4" autofocus maxlength="100000" placeholder="What's wrong on this page?"></textarea>
+      <div id="interim" class="note-interim" aria-live="polite" hidden></div>
       <div class="note-footer">
         <span id="status" class="hint" role="status">Enter saves · Shift+Enter new line · Esc closes</span>
-        <button id="save" type="submit">Save</button>
+        <span class="note-buttons">
+          <button id="mic" type="button" class="secondary" aria-pressed="false" title="Dictate into the note (click again to stop)" hidden>🎙 Dictate</button>
+          <button id="skip" type="button" class="secondary" title="Save the screenshot without a note (also Esc, while nothing is typed)" hidden>Skip</button>
+          <button id="save" type="submit">Save</button>
+        </span>
       </div>
     </form>
   </body>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ScreenRecordingState, VoiceRecordingState } from "../shared/state.js";
+import type { ScreenRecordingState, ServerInfo, VoiceRecordingState } from "../shared/state.js";
 import { MIC_COLOR, REC_COLOR, indicatorFor } from "./indicator-model.js";
 
 const page = { url: "http://localhost:5173/", title: "App" };
@@ -8,9 +8,17 @@ const T_1403 = Date.UTC(2026, 9, 13, 14, 3);
 const formatClock = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
 const shortcuts = { "toggle-recording": "Alt+R", "toggle-voice": "Alt+A" };
 
-const tab: ScreenRecordingState = { id: "s1", source: "tab", startedAt: T_1402, page, tabId: 7 };
-const display: ScreenRecordingState = { id: "s2", source: "display", startedAt: T_1402, page };
+const tab: ScreenRecordingState = { id: "s1", startedAt: T_1402, page, tabId: 7 };
 const voice: VoiceRecordingState = { id: "v1", startedAt: T_1403, page, microphoneLabel: "" };
+
+const up = (project: string | null): ServerInfo => ({ serverUrl: "http://localhost:5173", source: "tab", localPage: true, ok: true, project, version: "0.1.0" });
+const down = (localPage: boolean): ServerInfo => ({
+  serverUrl: "http://127.0.0.1:4848",
+  source: "fallback",
+  localPage,
+  ok: false,
+  message: "Can't reach the holt server at http://127.0.0.1:4848.",
+});
 
 describe("indicatorFor", () => {
   it("idle: no badge, the normal tooltip", () => {
@@ -18,12 +26,43 @@ describe("indicatorFor", () => {
       recording: false,
       text: "",
       color: REC_COLOR,
-      title: "holt: open the QA side panel",
+      title: "holt",
     });
   });
 
   it("idle with a known project names it", () => {
-    expect(indicatorFor({ recording: {}, shortcuts, projectName: "acme-web", formatClock }).title).toBe("holt (acme-web): open the QA side panel");
+    expect(indicatorFor({ recording: {}, shortcuts, server: up("acme-web"), formatClock })).toEqual({
+      recording: false,
+      text: "",
+      color: REC_COLOR,
+      title: "holt (acme-web)",
+    });
+    expect(indicatorFor({ recording: {}, shortcuts, server: up(null), formatClock }).title).toBe("holt");
+  });
+
+  it("no server for a local page: red '!' with the reason", () => {
+    expect(indicatorFor({ recording: {}, shortcuts, server: down(true), formatClock })).toEqual({
+      recording: false,
+      text: "!",
+      color: REC_COLOR,
+      title: "holt: no server for this page — Can't reach the holt server at http://127.0.0.1:4848.",
+    });
+  });
+
+  it("no server while on some other website: no badge (nothing to nag about there)", () => {
+    expect(indicatorFor({ recording: {}, shortcuts, server: down(false), formatClock })).toEqual({
+      recording: false,
+      text: "",
+      color: REC_COLOR,
+      title: "holt",
+    });
+  });
+
+  it("a recording takes precedence over the 'no server' badge", () => {
+    const result = indicatorFor({ recording: { screen: tab }, shortcuts, server: down(true), formatClock });
+    expect(result.text).toBe("REC");
+    expect(result.title).toBe("holt: recording tab since 14:02 (Alt+R to stop)");
+    expect(indicatorFor({ recording: { voice }, shortcuts, server: down(true), formatClock }).text).toBe("MIC");
   });
 
   it("tab recording: red REC with start time and the stop shortcut", () => {
@@ -45,16 +84,10 @@ describe("indicatorFor", () => {
   });
 
   it("both: REC wins the badge, the tooltip lists both", () => {
-    const result = indicatorFor({ recording: { screen: tab, voice }, shortcuts, projectName: "acme", formatClock });
+    const result = indicatorFor({ recording: { screen: tab, voice }, shortcuts, server: up("acme"), formatClock });
     expect(result.text).toBe("REC");
     expect(result.color).toBe(REC_COLOR);
     expect(result.title).toBe("holt (acme): recording tab since 14:02 (Alt+R to stop) · voice note since 14:03 (Alt+A to stop)");
-  });
-
-  it("window/screen recording from the panel says where to stop it", () => {
-    const result = indicatorFor({ recording: { screen: display }, shortcuts, formatClock });
-    expect(result.text).toBe("REC");
-    expect(result.title).toMatch(/recording a window or screen since 14:02 \(stop it in the side panel/);
   });
 
   it("names the microphone, and says when the selected one was missing", () => {
@@ -67,7 +100,7 @@ describe("indicatorFor", () => {
   });
 
   it("unbound or rebound shortcuts are reflected", () => {
-    expect(indicatorFor({ recording: { screen: tab }, shortcuts: {}, formatClock }).title).toMatch(/\(stop it in the side panel\)$/);
+    expect(indicatorFor({ recording: { screen: tab }, shortcuts: {}, formatClock }).title).toMatch(/\(click to stop\)$/);
     expect(indicatorFor({ recording: { voice }, shortcuts: { "toggle-voice": "⌥A" }, formatClock }).title).toMatch(/\(⌥A to stop\)$/);
   });
 

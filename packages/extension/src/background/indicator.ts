@@ -4,13 +4,13 @@
  * indicator and the short "✓"/"!" flashes (notify.ts) don't fight:
  *
  *   refreshIndicator()  recompute from storage (recording state, current
- *                       shortcuts, project name) and apply. Called whenever
+ *                       shortcuts, server for the page in front) and apply. Called whenever
  *                       the recording state or server info changes, in
  *                       whatever context changed it (via storage.onChanged,
  *                       see index.ts), and on worker start.
  *   flashBadge()        show "✓"/"!" for a moment, then refreshIndicator(),
- *                       which puts "REC"/"MIC" back if something is still
- *                       recording (instead of clearing the badge as before).
+ *                       which puts "REC"/"MIC" (or the "no server" "!")
+ *                       back, or clears the badge.
  *
  * The decision itself (text, colour, tooltip) is the pure `indicatorFor`
  * in indicator-model.ts.
@@ -39,7 +39,7 @@ let recordingIcon: Promise<Record<number, ImageData>> | null = null;
 export async function refreshIndicator(): Promise<void> {
   try {
     const [recording, shortcuts, serverInfo] = await Promise.all([getRecordingState(), getShortcuts(), getState("serverInfo")]);
-    const indicator = indicatorFor({ recording, shortcuts, projectName: serverInfo?.projectName });
+    const indicator = indicatorFor({ recording, shortcuts, server: serverInfo });
     const work: Promise<unknown>[] = [setIcon(indicator.recording)];
     if (Date.now() >= flashingUntil) {
       work.push(

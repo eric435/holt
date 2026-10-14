@@ -7,7 +7,7 @@ import {
   type EntryInput,
 } from "@holt/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, baseMediaType, createApi } from "./api.js";
+import { ApiError, baseMediaType, createApi, isHoltStatus } from "./api.js";
 
 const SERVER = "http://127.0.0.1:4848";
 const session = { id: "s1", dir: "/repo/qa/x", markdownFile: "qa/x/notes.md", startedAt: "t", entryCount: 0 };
@@ -70,7 +70,7 @@ describe("request shaping", () => {
   });
 
   it("POST /entries with the entry as JSON", async () => {
-    const entry: EntryInput = { kind: "note", capturedAt: "2026-10-13T00:00:00Z", page: { url: "u", title: "t" }, text: "hi" };
+    const entry: EntryInput = { kind: "note", capturedAt: "2026-10-13T00:00:00Z", page: { url: "u", title: "t" }, note: "hi" };
     fetchMock.mockImplementation(async () => jsonResponse({ ok: true, entry: { ...entry, id: "e1", seq: 1, receivedAt: "r" }, session }));
     const res = await createApi({ serverUrl: SERVER, token: "" }).postEntry(entry);
     expect(res.entry.seq).toBe(1);
@@ -108,7 +108,9 @@ describe("error mapping", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ code: "unreachable" });
     expect((error as Error).message).toContain(SERVER);
-    expect((error as Error).message).toContain("npx holt");
+    // The scoped name: without a local install, `npx holt` would fetch an unrelated package.
+    expect((error as Error).message).toContain("npx @velvet-thunder/holt");
+    expect((error as Error).message).not.toMatch(/npx holt\b/);
     expect((error as Error).message).toContain("Vite plugin");
   });
 
@@ -120,13 +122,21 @@ describe("error mapping", () => {
     });
   });
 
-  it("passes server error codes through, with a token hint for 'forbidden'", async () => {
-    fetchMock.mockImplementation(async () => jsonResponse({ ok: false, error: { code: "forbidden", message: "Bad token." } }, 403));
+  it("passes server error codes through, with a token hint when the server objects to the token", async () => {
+    const message = `Missing or wrong "${TOKEN_HEADER}" header`;
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: false, error: { code: "forbidden", message } }, 403));
     await expect(createApi({ serverUrl: SERVER, token: "x" }).status()).rejects.toMatchObject({
       code: "forbidden",
       status: 403,
-      message: expect.stringMatching(/^Bad token\. Check that the token/),
+      message: `${message} Check that the token in Settings matches the server's holt.config.json.`,
     });
+  });
+
+  it("no token hint on holt's other 'forbidden' errors (Host, Origin), which the token can't fix", async () => {
+    for (const message of ["Host header is not a loopback host", "Origin http://evil.example is not allowed"]) {
+      fetchMock.mockImplementation(async () => jsonResponse({ ok: false, error: { code: "forbidden", message } }, 403));
+      await expect(createApi({ serverUrl: SERVER, token: "x" }).status()).rejects.toMatchObject({ code: "forbidden", message });
+    }
   });
 
   it("passes other server errors through unchanged", async () => {
@@ -149,6 +159,49 @@ describe("error mapping", () => {
   it("maps JSON without ok:true to 'bad-response'", async () => {
     fetchMock.mockImplementation(async () => jsonResponse({ hello: "world" }));
     await expect(createApi({ serverUrl: SERVER, token: "" }).status()).rejects.toMatchObject({ code: "bad-response" });
+  });
+});
+
+describe("redirects", () => {
+  it("every request refuses to follow one, so a probe or the token can't be sent off this machine", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: true, name: "holt", version: "1", session: null, config: {} }));
+    const api = createApi({ serverUrl: SERVER, token: "s3cret" });
+    await api.status();
+    await api.stopSession();
+    await api.uploadMedia(new Blob(["x"], { type: "image/png" }), "screenshot").catch(() => undefined);
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    for (let n = 0; n < fetchMock.mock.calls.length; n++) expect(call(n).init.redirect).toBe("error");
+  });
+
+  it("a redirect (fetch rejects with redirect: 'error') is reported as 'unreachable', not followed", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    await expect(createApi({ serverUrl: SERVER, token: "" }).status()).rejects.toMatchObject({ code: "unreachable" });
+  });
+});
+
+describe("status timeout", () => {
+  it("can be shortened per call (the server probe does)", async () => {
+    fetchMock.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(init.signal?.reason))),
+    );
+    const started = Date.now();
+    const error = await createApi({ serverUrl: SERVER, token: "" }).status({ timeoutMs: 50 }).catch((e: unknown) => e);
+    expect(Date.now() - started).toBeLessThan(2_000); // not the default 3 s
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe("unreachable");
+    expect((error as ApiError).message).toMatch(/did not answer in time/);
+  });
+});
+
+describe("isHoltStatus", () => {
+  it("only accepts holt's own status body", () => {
+    expect(isHoltStatus({ ok: true, name: "holt", version: "0.1.0" })).toBe(true);
+    expect(isHoltStatus({ ok: true })).toBe(false);
+    expect(isHoltStatus({ ok: true, name: "something-else" })).toBe(false);
+    expect(isHoltStatus({ ok: false, name: "holt" })).toBe(false);
+    expect(isHoltStatus("holt")).toBe(false);
+    expect(isHoltStatus(null)).toBe(false);
   });
 });
 

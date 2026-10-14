@@ -11,7 +11,7 @@ button.addEventListener("click", async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((track) => track.stop());
-    result.textContent = "Microphone access granted. You can close this tab and start the voice note again (shortcut or side panel).";
+    result.textContent = "Microphone access granted. You can close this tab and start the voice note again (its shortcut or the toolbar menu).";
     button.disabled = true;
   } catch (error) {
     const name = (error as DOMException).name;

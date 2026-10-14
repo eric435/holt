@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import holt from "holt/vite";
+import holt from "@velvet-thunder/holt/vite";
 
 export default defineConfig({
   // holt mounts its API at /__holt on this dev server. Settings come

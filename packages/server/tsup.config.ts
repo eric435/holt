@@ -2,8 +2,8 @@
  * Build config for the published package.
  *
  * Three entry points, all ESM:
- *   dist/index.js  programmatic API  (`import { createHolt } from "holt-qa"`)
- *   dist/vite.js   Vite plugin       (`import holt from "holt-qa/vite"`)
+ *   dist/index.js  programmatic API  (`import { createHolt } from "@velvet-thunder/holt"`)
+ *   dist/vite.js   Vite plugin       (`import holt from "@velvet-thunder/holt/vite"`)
  *   dist/cli.js    the `holt` bin (tsup keeps the source's `#!` line and chmods it)
  *
  * `@holt/protocol` is a private workspace package consumed as TypeScript
@@ -28,7 +28,7 @@ export default defineConfig({
   platform: "node",
   target: "node20",
   // Shared code between the entries goes into chunks instead of being
-  // duplicated, so `holt-qa` and `holt-qa/vite` share one copy.
+  // duplicated, so `@velvet-thunder/holt` and `@velvet-thunder/holt/vite` share one copy.
   splitting: true,
   clean: true,
   // Types only for the importable entries; the CLI is not imported by anyone.

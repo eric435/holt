@@ -11,7 +11,8 @@
  *      this; there is no standard constraint for it), then record with
  *      MediaRecorder.
  *
- * Compared to getDisplayMedia (the panel's "Record a window or screen…"):
+ * Compared to getDisplayMedia (window/screen sharing, which holt doesn't
+ * offer: it needs a click in a visible document and shows a picker):
  * no picker, no user activation needed (so a shortcut can start it), it
  * records only the tab's content, and it follows the tab across
  * navigations. It ends when the tab is closed: the video track fires

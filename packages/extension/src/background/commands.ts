@@ -12,10 +12,15 @@
  * (chrome.commands.getAll()), since users can rebind everything at
  * chrome://extensions/shortcuts.
  *
+ * The toolbar menu (src/menu/) runs the same commands through
+ * `handleCommand` (a `menu:run` message, see index.ts), so a menu item and
+ * its shortcut always behave the same.
+ *
  * Every command works with the side panel closed ("headless"):
  *   screenshots      captured and uploaded by the worker;
  *   toggle-voice,
- *   toggle-recording run in the offscreen document (recording.ts);
+ *   toggle-recording run in the offscreen document (recording.ts); both
+ *                    show an editable transcript on the page (voice-overlay.ts);
  *   quick-note       opens the note popup (note-popup.ts);
  *   open-panel       opens the panel.
  * Results and errors go to the panel if it is open, else to the badge.
@@ -31,10 +36,24 @@
  *    activeTab grant, which outlives the gesture (until the tab navigates),
  *    so they may run after awaits (verified, see recording.ts).
  * That is why `handleCommand` is a plain (non-async) function.
+ *
+ * Our own pages in front: the screenshot note prompt opens focused (a
+ * popup window), so a shortcut pressed while it is up arrives with the
+ * prompt as "the active tab". Run as is, Alt+S would fail on it, Alt+A would
+ * start a voice note about it, Alt+R would try to record it. So a command
+ * whose tab is one of our extension pages is retargeted (`commandTarget`):
+ * to the tab the pending screenshot was taken of (its activeTab grant from
+ * that capture still holds), or else to the active tab of the last focused
+ * normal window. Finding either is asynchronous, so a retargeted command
+ * runs after an await: the side panel can't open then (no gesture left),
+ * and the quick note opens as a popup window instead of the action popup,
+ * both of which the code below already copes with. Commands on web pages
+ * (the normal case) keep their synchronous path.
  */
 
 import type { ScreenshotMode } from "@holt/protocol";
-import { pageContextFromTab } from "../shared/page-context.js";
+import { isOwnExtensionPage } from "../shared/pages.js";
+import { getState } from "../shared/state.js";
 import { takeScreenshot } from "./actions.js";
 import { openNotePopup } from "./note-popup.js";
 import { notifyToast } from "./notify.js";
@@ -47,6 +66,17 @@ const SCREENSHOT_COMMANDS: Readonly<Record<string, ScreenshotMode>> = {
 };
 
 export function handleCommand(command: string, tab: chrome.tabs.Tab | undefined): void {
+  if (tab && isOwnExtensionPage(tab.url, chrome.runtime.id)) {
+    void commandTarget().then(
+      (target) => runCommand(command, target),
+      (error: unknown) => console.warn("[holt] could not find the page for", command, error),
+    );
+    return;
+  }
+  runCommand(command, tab);
+}
+
+function runCommand(command: string, tab: chrome.tabs.Tab | undefined): void {
   switch (command) {
     case "open-panel":
       // Synchronously, while the gesture is still active.
@@ -56,7 +86,7 @@ export function handleCommand(command: string, tab: chrome.tabs.Tab | undefined)
       openNotePopup(tab); // synchronous part first, see note-popup.ts
       return;
     case "toggle-voice":
-      void toggleVoice(pageContextFromTab(tab));
+      void toggleVoice(tab);
       return;
     case "toggle-recording":
       void toggleTabRecording(tab);
@@ -70,6 +100,30 @@ export function handleCommand(command: string, tab: chrome.tabs.Tab | undefined)
       return;
     }
     void takeScreenshot(mode, tab);
+  }
+}
+
+/**
+ * The page a command pressed on one of our own pages is meant
+ * for, see the header: the pending screenshot's tab while its prompt is up,
+ * else the active tab of the last focused normal window. Undefined if
+ * neither exists (the command then reports "no active tab").
+ */
+async function commandTarget(): Promise<chrome.tabs.Tab | undefined> {
+  const pending = await getState("pendingScreenshot");
+  if (pending && pending.tabId >= 0) {
+    const tab = await chrome.tabs.get(pending.tabId).catch(() => undefined);
+    if (tab) return tab;
+  }
+  try {
+    const win = await chrome.windows.getLastFocused({ windowTypes: ["normal"] });
+    if (win.id === undefined) return undefined;
+    // Possibly `ownPage` itself again (e.g. holt's permissions page in a
+    // normal window): then the command runs on it and says why it can't.
+    const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
+    return tab;
+  } catch {
+    return undefined; // no normal window left
   }
 }
 

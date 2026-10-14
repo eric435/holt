@@ -23,19 +23,35 @@
  *    or flashes the badge.
  *  - Our messages also wake the worker if Chrome has shut it down mid-recording.
  *
+ * Both recorders transcribe the microphone live (transcribe.ts): a voice
+ * note what it records, a tab recording the user's narration. The user can
+ * edit the transcript in a box on the page while recording and review it
+ * afterwards, so a stopped recording is not uploaded right away:
+ *
+ *   stop -> recorder:stopped (indicator off) -> recorder:finished { transcript }
+ *        -> (the worker lets the user review it) -> offscreen:commit { save, transcript }
+ *        -> upload with the reviewed transcript, or drop it
+ *
+ * Until the commit arrives the recording waits here (`awaiting`), at most
+ * REVIEW_TIMEOUT_MS; then it is saved with the raw transcript, so a lost
+ * review (the tab was closed, the worker never answered) can't lose it.
+ *
  * Messages handled (all from the worker):
  *   offscreen:start-tab / offscreen:start-voice   -> OffscreenStartResponse
- *   offscreen:stop                                -> { ok, wasRunning } (upload continues afterwards)
+ *   offscreen:stop                                -> { ok, wasRunning } (finishing continues afterwards)
+ *   offscreen:commit                              -> { ok, found } (upload continues afterwards)
  *   offscreen:status                              -> OffscreenStatusResponse
- * Messages sent (to the worker; the panel also hears them):
- *   recorder:stopped, recorder:toast, recorder:idle, entry-created,
- *   recorder:transcript (for the panel's live transcript)
+ * Messages sent (to the worker):
+ *   recorder:stopped, recorder:finished, recorder:toast, recorder:idle,
+ *   entry-created, recorder:transcript (live transcript, which the worker
+ *   forwards to the box on the page)
  */
 
-import type { EntryInput, EntryKind, PageContext } from "@holt/protocol";
+import { ENTRY_FIELD_LIMITS, type EntryInput, type EntryKind, type PageContext } from "@holt/protocol";
 import { getApi } from "../shared/api.js";
 import {
   errorMessage,
+  isOffscreenCommitRequest,
   isOffscreenStartTabRequest,
   isOffscreenStartVoiceRequest,
   isOffscreenStopRequest,
@@ -45,27 +61,48 @@ import {
   type OffscreenStartResponse,
   type OffscreenStartTabRequest,
   type OffscreenStartVoiceRequest,
+  type OffscreenCommitResponse,
   type OffscreenStatusResponse,
+  type RecorderFinishedMessage,
   type RecorderKind,
   type RecorderSettings,
+  type RecorderTranscriptMessage,
   type ToastAction,
   type ToastLevel,
 } from "../shared/messages.js";
 import type { RecordedMedia } from "../shared/media-recorder.js";
+import { clampText } from "../shared/page-context.js";
 import { startTabRecording } from "./tab.js";
+import type { TranscriptResult, TranscriptUpdate } from "../shared/speech.js";
+import { startNarration } from "./transcribe.js";
 import { startVoiceNote, type VoiceResult } from "./voice.js";
+
+/** How long a stopped recording waits for the user's review before it is saved as is. */
+const REVIEW_TIMEOUT_MS = 60 * 60_000;
+
+type Stopped = { kind: "tab"; media: RecordedMedia; transcript: TranscriptResult } | { kind: "voice"; result: VoiceResult };
 
 interface Active {
   id: string;
   page: PageContext;
   settings: RecorderSettings;
   /** Stop recording; resolves with what to upload. */
-  stop(): Promise<{ kind: "tab"; media: RecordedMedia } | { kind: "voice"; result: VoiceResult }>;
+  stop(): Promise<Stopped>;
+}
+
+interface Awaiting {
+  current: Active;
+  stopped: Stopped;
+  /** The recogniser's transcript, saved if the review never comes. */
+  transcript: string;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 const active: Partial<Record<RecorderKind, Active>> = {};
-/** Recordings stopped but not uploaded yet: the document must stay open for them. */
-let uploading = 0;
+/** Stopped recordings waiting for `offscreen:commit`, by id. */
+const awaiting = new Map<string, Awaiting>();
+/** Recordings stopped but not saved yet (awaiting review or uploading): the document must stay open for them. */
+let finishing = 0;
 
 onMessage((message: Message, sender) => {
   // Content scripts' runtime messages reach extension pages too; only our
@@ -84,6 +121,11 @@ onMessage((message: Message, sender) => {
       void finish(message.recorder);
       return { ok: true, wasRunning };
     }
+    case "offscreen:commit": {
+      if (!isOffscreenCommitRequest(message)) return { ok: true, found: false } satisfies OffscreenCommitResponse;
+      const found = commit(message.id, message.save, message.transcript);
+      return { ok: true, found } satisfies OffscreenCommitResponse;
+    }
     case "offscreen:status":
       return status();
     default:
@@ -92,7 +134,7 @@ onMessage((message: Message, sender) => {
 });
 
 function status(): OffscreenStatusResponse {
-  return { ok: true, tab: active.tab?.id ?? null, voice: active.voice?.id ?? null, uploading };
+  return { ok: true, tab: active.tab?.id ?? null, voice: active.voice?.id ?? null, finishing };
 }
 
 // ---------------------------------------------------------------------------
@@ -100,15 +142,22 @@ function status(): OffscreenStatusResponse {
 // ---------------------------------------------------------------------------
 
 async function startTab(request: OffscreenStartTabRequest): Promise<OffscreenStartResponse> {
-  if (active.tab) return { ok: false, error: "A tab recording is already running." };
+  // The worker only starts a recorder whose slot is empty, so this one is
+  // running behind its back: say which, so it can stop (and save) it.
+  if (active.tab) return { ok: false, error: "A tab recording is already running.", runningId: active.tab.id };
   try {
     const recording = await startTabRecording(request.streamId, () => void finish("tab"));
     console.info("[holt] tab capture running at", recording.settings.width, "x", recording.settings.height);
+    // Once the capture runs; it doesn't wait for (or depend on) the microphone.
+    const narration = startNarration(request.settings.microphoneId, transcriptSender("tab", request.id));
     active.tab = {
       id: request.id,
       page: request.page,
       settings: request.settings,
-      stop: async () => ({ kind: "tab", media: await recording.stop() }),
+      stop: async () => {
+        const [media, transcript] = await Promise.all([recording.stop(), narration.stop()]);
+        return { kind: "tab", media, transcript };
+      },
     };
     return { ok: true };
   } catch (error) {
@@ -117,12 +166,9 @@ async function startTab(request: OffscreenStartTabRequest): Promise<OffscreenSta
 }
 
 async function startVoice(request: OffscreenStartVoiceRequest): Promise<OffscreenStartResponse> {
-  if (active.voice) return { ok: false, error: "A voice note is already running." };
+  if (active.voice) return { ok: false, error: "A voice note is already running.", runningId: active.voice.id };
   try {
-    const started = await startVoiceNote(request.settings.microphoneId, ({ final, interim }) => {
-      // Best effort: only the panel listens, and it may be closed.
-      chrome.runtime.sendMessage({ type: "recorder:transcript", final, interim }).catch(() => undefined);
-    });
+    const started = await startVoiceNote(request.settings.microphoneId, transcriptSender("voice", request.id));
     active.voice = {
       id: request.id,
       page: request.page,
@@ -135,6 +181,15 @@ async function startVoice(request: OffscreenStartVoiceRequest): Promise<Offscree
   } catch (error) {
     return startFailure(error);
   }
+}
+
+/** Forward live transcript updates to the worker, which shows them in the box on the page. Best effort. */
+function transcriptSender(recorder: RecorderKind, id: string): (update: TranscriptUpdate) => void {
+  return ({ final, interim, error }) => {
+    const message: RecorderTranscriptMessage = { type: "recorder:transcript", recorder, id, final, interim };
+    if (error) message.error = error;
+    chrome.runtime.sendMessage(message).catch(() => undefined);
+  };
 }
 
 function startFailure(error: unknown): OffscreenStartResponse {
@@ -151,30 +206,73 @@ function startFailure(error: unknown): OffscreenStartResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * Stop `kind` (on request, or because its stream ended) and upload it.
+ * Stop `kind` (on request, or because its stream ended), then hand its
+ * transcript to the worker for review and wait for `offscreen:commit`.
  * Tells the worker "stopped" right away, so the indicator goes off before
- * the (possibly slow) upload.
+ * the transcript's last words (and the review) are in.
  */
 async function finish(kind: RecorderKind): Promise<void> {
   const current = active[kind];
   if (!current) return;
   delete active[kind];
-  uploading++;
+  finishing++;
   send({ type: "recorder:stopped", recorder: kind, id: current.id });
+  let stopped: Stopped;
   try {
-    const stopped = await current.stop();
-    if (stopped.kind === "tab") await saveTab(current, stopped.media);
-    else await saveVoice(current, stopped.result);
+    stopped = await current.stop();
   } catch (error) {
-    toast("error", `${kind === "tab" ? "Recording" : "Voice note"} not saved: ${errorMessage(error)}`);
-  } finally {
-    uploading--;
-    maybeIdle();
+    toast("error", `${label(kind)} not saved: ${errorMessage(error)}`);
+    done();
+    return;
   }
+  const { text, error } = stopped.kind === "tab" ? stopped.transcript : { text: stopped.result.transcript, error: stopped.result.transcriptError };
+  const timer = setTimeout(() => {
+    console.warn("[holt] no review for", current.id, "in time; saving the transcript as recognised");
+    commit(current.id, true, text);
+  }, REVIEW_TIMEOUT_MS);
+  awaiting.set(current.id, { current, stopped, transcript: text, timer });
+  const message: RecorderFinishedMessage = { type: "recorder:finished", recorder: kind, id: current.id, transcript: text };
+  if (error) message.error = error;
+  send(message);
 }
 
-async function saveTab(current: Active, media: RecordedMedia): Promise<void> {
+/**
+ * The user's verdict on a finished recording: upload it with `transcript`,
+ * or drop it. Returns false if `id` isn't waiting (any more). The upload
+ * continues after we have answered.
+ */
+function commit(id: string, save: boolean, transcript: string): boolean {
+  const waiting = awaiting.get(id);
+  if (!waiting) return false;
+  awaiting.delete(id);
+  clearTimeout(waiting.timer);
+  const { current, stopped } = waiting;
+  void (async () => {
+    try {
+      if (!save) toast("info", `${label(stopped.kind)} discarded.`);
+      else if (stopped.kind === "tab") await saveTab(current, stopped.media, transcript);
+      else await saveVoice(current, stopped.result, transcript);
+    } catch (error) {
+      toast("error", `${label(stopped.kind)} not saved: ${errorMessage(error)}`);
+    } finally {
+      done();
+    }
+  })();
+  return true;
+}
+
+function done(): void {
+  finishing--;
+  maybeIdle();
+}
+
+function label(kind: RecorderKind): string {
+  return kind === "tab" ? "Recording" : "Voice note";
+}
+
+async function saveTab(current: Active, media: RecordedMedia, transcript: string): Promise<void> {
   const capturedAt = new Date(Date.now() - media.durationMs).toISOString();
+  const text = noteText(transcript);
   toast("info", `Uploading recording (${(media.blob.size / 1e6).toFixed(1)} MB)…`);
   await upload(current.settings, media.blob, "recording", (file) => ({
     kind: "recording",
@@ -182,21 +280,29 @@ async function saveTab(current: Active, media: RecordedMedia): Promise<void> {
     page: current.page,
     file,
     durationMs: media.durationMs,
+    // The reviewed narration is the user's words about the recording.
+    ...(text && { note: text }),
   }));
 }
 
-async function saveVoice(current: Active, result: VoiceResult): Promise<void> {
+async function saveVoice(current: Active, result: VoiceResult, reviewed: string): Promise<void> {
   if (result.transcriptError) toast("info", result.transcriptError);
-  const transcript = result.transcript.trim();
-  // Audio is always kept when there is no transcript, or the note would be empty.
-  const keepAudio = current.settings.keepAudio || !transcript;
+  const note = noteText(reviewed);
+  // Audio is kept if the user asked for it (off by default), and always when
+  // there are no usable words, or the voice note would be empty.
+  const keepAudio = current.settings.keepAudio || !note;
   const capturedAt = new Date(Date.now() - result.durationMs).toISOString();
   const base = { kind: "voice-note" as const, capturedAt, page: current.page, durationMs: result.durationMs };
   if (keepAudio) {
-    await upload(current.settings, result.blob, "voice-note", (file) => (transcript ? { ...base, file, transcript } : { ...base, file }));
+    await upload(current.settings, result.blob, "voice-note", (file) => (note ? { ...base, file, note } : { ...base, file }));
   } else {
-    await upload(current.settings, null, "voice-note", () => ({ ...base, transcript }));
+    await upload(current.settings, null, "voice-note", () => ({ ...base, note }));
   }
+}
+
+/** The user's words as an entry's `note`: trimmed, and within the server's limit (it refuses longer ones). */
+function noteText(text: string): string {
+  return clampText(text.trim(), ENTRY_FIELD_LIMITS.note);
 }
 
 /** Upload `blob` (if any), post the entry, and hand it to the worker for notification. */
@@ -212,7 +318,7 @@ async function upload(settings: RecorderSettings, blob: Blob | null, kind: Entry
 // ---------------------------------------------------------------------------
 
 function maybeIdle(): void {
-  if (!active.tab && !active.voice && uploading === 0) send({ type: "recorder:idle" });
+  if (!active.tab && !active.voice && finishing === 0) send({ type: "recorder:idle" });
 }
 
 function toast(level: ToastLevel, message: string, action?: ToastAction): void {

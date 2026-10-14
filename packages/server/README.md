@@ -9,7 +9,6 @@ qa/2026-10-13-075200/
   notes.md
   001-screenshot.png
   002-recording.webm
-  003-voice-note.webm
 ```
 
 This package receives captures from the holt Chrome extension over
@@ -18,8 +17,8 @@ localhost HTTP and writes the files. It has **zero runtime dependencies**.
 ## Install
 
 ```bash
-npm i -D holt-qa
-# or: pnpm add -D holt-qa / yarn add -D holt-qa
+npm i -D @velvet-thunder/holt
+# or: pnpm add -D @velvet-thunder/holt / yarn add -D @velvet-thunder/holt
 ```
 
 Requires Node.js 20 or newer.
@@ -29,17 +28,17 @@ Requires Node.js 20 or newer.
 ### Standalone (any stack)
 
 ```bash
-npx holt-qa
+npx holt
 ```
 
-The package installs a command named `holt`: `npx holt-qa` runs it whether
-or not the package is installed, and once it is a dev dependency, `npx holt`
-works too.
+The package installs a command named `holt`. Once it is a dev dependency,
+`npx holt` (or `pnpm holt`) runs it. To try it without installing, use
+`npx @velvet-thunder/holt`.
 
 ```
 [holt] v0.0.1 serving my-app (from package.json) at http://127.0.0.1:4848/__holt
 [holt] Writing sessions to /path/to/app/qa
-[holt] Connect: open the holt extension's side panel and set the server URL to http://127.0.0.1:4848
+[holt] Connect: nothing to set up. This is the holt extension's default server URL.
 ```
 
 Options:
@@ -59,15 +58,20 @@ ends the active session cleanly.
 ```ts
 // vite.config.ts
 import { defineConfig } from "vite";
-import holt from "holt-qa/vite";
+import holt from "@velvet-thunder/holt/vite";
 
 export default defineConfig({
   plugins: [holt()],
 });
 ```
 
-The API is mounted on Vite's dev server at `/__holt`, so point the
-extension at your dev server's URL (e.g. `http://localhost:5173`). The plugin
+The API is mounted on Vite's dev server at `/__holt`. The extension
+detects it by itself on every page that dev server serves (it asks the
+page's origin for `/__holt/status`, on loopback hosts only), so there is
+nothing to configure. If your pages are served by another backend that uses
+Vite only for assets (Rails, Laravel, Django, ...), the page's origin is not
+Vite's: set the extension's fallback server URL to the dev server's URL
+(e.g. `http://localhost:5173`); the startup banner prints it. The plugin
 does nothing during `vite build`. Options are the same keys as the config file
 (`port` is ignored; Vite owns the port), plus `configFile`.
 
@@ -76,17 +80,19 @@ default `outputDir: "qa"` inside your project, Vite would otherwise serve
 every screenshot and `notes.md` at `/qa/...` to anything that can reach the
 dev server.
 
-**Requires Vite 5.4.12 or newer** (the `vite` peer dependency range is
-`>=5.4.12`). Earlier versions answer every dev-server request with
-`Access-Control-Allow-Origin: *`, so any web page you visit could read your
-app's source through the dev server. Vite is an optional peer: you only need
-it if you use `holt-qa/vite`.
+**Requires Vite 5.4.12+ (5.x) or 6.0.9+** (the `vite` peer dependency range
+is `^5.4.12 || >=6.0.9`). Earlier versions, including 6.0.0 to 6.0.8, answer
+every dev-server request with `Access-Control-Allow-Origin: *`
+([GHSA-vg6x-rcgg-rjx6](https://github.com/vitejs/vite/security/advisories/GHSA-vg6x-rcgg-rjx6)),
+so any web page you visit could read your app's source through the dev
+server. Vite is an optional peer: you only need
+it if you use `@velvet-thunder/holt/vite`.
 
 ### Programmatic
 
 ```ts
 import http from "node:http";
-import { createHolt } from "holt-qa";
+import { createHolt } from "@velvet-thunder/holt";
 
 const holt = await createHolt({ cwd: process.cwd() });
 http.createServer(async (req, res) => {
@@ -101,12 +107,12 @@ drops into any node:http or connect-style middleware chain.
 ## Configuration
 
 `holt.config.json` in your project root. Every key is optional. Run
-`npx holt-qa init` to create one with the defaults and a `$schema` for editor
+`npx holt init` to create one with the defaults and a `$schema` for editor
 autocomplete.
 
 ```json
 {
-  "$schema": "./node_modules/holt-qa/schema.json",
+  "$schema": "./node_modules/@velvet-thunder/holt/schema.json",
   "outputDir": "qa",
   "token": null
 }

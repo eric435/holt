@@ -51,5 +51,26 @@ export const ACCEPTED_MEDIA_TYPES: Readonly<Record<string, string>> = {
   "audio/wav": "wav",
 };
 
+/**
+ * Longest value the server accepts for each free-text field of an entry
+ * (`POST /entries`), in characters (JavaScript string length, i.e. UTF-16
+ * code units). Anything longer is a 400 naming the field.
+ *
+ * Why per-field caps when the JSON body already has a size limit: the body
+ * limit bounds the request, not each field. A page title or URL that a
+ * hostile page made megabytes long would otherwise be written into notes.md
+ * (and echoed back in the response) in full. The numbers are
+ * far above anything real: browsers cap tab titles well under 1,000, real
+ * URLs fit in 8 KiB (most servers reject longer ones), the extension itself
+ * refuses transcripts over 100,000 characters, and file names come from
+ * the server (`003-screenshot.png`) and filesystems stop at 255.
+ */
+export const ENTRY_FIELD_LIMITS = {
+  "page.title": 1_000,
+  "page.url": 8_192,
+  note: 100_000,
+  file: 255,
+} as const;
+
 /** Name of the config file the server looks for in the project root. */
 export const CONFIG_FILE_NAME = "holt.config.json";

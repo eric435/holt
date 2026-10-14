@@ -17,29 +17,35 @@
 import {
   isAreaCancelledMessage,
   isAreaSelectedMessage,
-  isCaptureRequest,
   isEntryCreatedMessage,
+  isMenuRunRequest,
   isOwnPageSender,
+  isRecorderFinishedMessage,
   isRecorderStoppedMessage,
   isRecorderToastMessage,
-  isRecorderToggleRequest,
+  isRecorderTranscriptMessage,
+  isScreenshotNoteDraftMessage,
+  isScreenshotNoteFinishMessage,
   isSenderPage,
   isTrustedExtensionSender,
+  isVoiceOverlayDecisionMessage,
+  isVoiceOverlayDraftMessage,
+  isVoiceOverlayStopMessage,
   onMessage,
-  type CaptureResponse,
+  type MenuRunRequest,
   type Message,
-  type RecorderToggleRequest,
-  type RecorderToggleResponse,
 } from "../shared/messages.js";
-import { pageContextFromTab } from "../shared/page-context.js";
-import { migrateFromSync, restrictStorageAccess } from "../shared/settings.js";
+import { migrateFromSync, onSettingsChanged, restrictStorageAccess } from "../shared/settings.js";
 import { onRecordingStateChanged, onStateChanged } from "../shared/state.js";
-import { cancelAreaSelection, finishAreaSelection, takeScreenshot } from "./actions.js";
-import { handleCommand, openSidePanel } from "./commands.js";
+import { cancelAreaSelection, finishAreaSelection } from "./actions.js";
+import { handleCommand } from "./commands.js";
 import { refreshIndicator } from "./indicator.js";
 import { notifyEntryAdded, notifyToast } from "./notify.js";
 import { OFFSCREEN_URL, closeOffscreenIfIdle } from "./offscreen.js";
-import { onRecorderStopped, reconcileRecordingState, toggleTabRecording, toggleVoice } from "./recording.js";
+import { finishScreenshotNote, onPromptWindowClosed, reconcilePendingScreenshot, saveScreenshotDraft } from "./pending-screenshot.js";
+import { onRecorderStopped, reconcileRecordingState, stopFromOverlay } from "./recording.js";
+import { onTabUpdated, refreshServerInfo } from "./server-info.js";
+import { decide, finishTranscript, relayTranscript, saveDraft } from "./voice-overlay.js";
 
 // Before anything else touches settings: make storage.local/sync readable
 // only by the worker and extension pages (not content scripts), and move
@@ -54,13 +60,6 @@ chrome.commands.onCommand.addListener(handleCommand);
 
 onMessage((message: Message, sender) => {
   switch (message.type) {
-    case "capture":
-      // Only from the side panel: a content script (i.e. a web page) must
-      // not be able to trigger captures. Validate the shape too.
-      if (!isTrustedExtensionSender(sender, chrome.runtime.id)) return { ok: false, error: "Capture requests must come from the side panel." };
-      if (!isCaptureRequest(message)) return { ok: false, error: "Malformed capture request." };
-      return handleCaptureRequest(message.windowId, message.mode);
-
     case "area-selected":
       // From the overlay content script, i.e. from inside a web page:
       // validate every field here, and the sender (top frame of the tab we
@@ -73,11 +72,36 @@ onMessage((message: Message, sender) => {
       if (isAreaCancelledMessage(message)) void cancelAreaSelection(sender);
       return { ok: true };
 
-    case "recorder:toggle":
-      // The panel's Record tab / Voice note buttons: same path as the shortcuts.
-      if (!isTrustedExtensionSender(sender, chrome.runtime.id)) return { ok: false, error: "Recorder requests must come from the side panel." };
-      if (!isRecorderToggleRequest(message)) return { ok: false, error: "Malformed recorder request." };
-      return handleRecorderToggle(message);
+    case "menu:run":
+      // The toolbar menu (menu.html): same path as the shortcuts. Only from
+      // an extension page that is not a tab (the action popup): a content
+      // script (i.e. a web page) must not be able to trigger captures.
+      // Answered before the work is done, so the menu can close right away.
+      if (!isTrustedExtensionSender(sender, chrome.runtime.id)) return { ok: false, error: "Menu requests must come from the toolbar menu." };
+      if (!isMenuRunRequest(message)) return { ok: false, error: "Malformed menu request." };
+      void runFromMenu(message);
+      return { ok: true };
+
+    case "server-info:refresh":
+      // The menu (when it opens) or the panel: check the server for the page in front again.
+      if (!isTrustedExtensionSender(sender, chrome.runtime.id)) return undefined;
+      return refreshServerInfo().then(() => ({ ok: true }));
+
+    case "screenshot-note:finish":
+      // The note prompt after a screenshot (a popup window, i.e. a tab, so
+      // isTrustedExtensionSender would refuse it): write the screenshot's
+      // entry with the user's note. Answered once it is written, so the
+      // prompt can show an error and keep the text if it fails.
+      if (!isOwnPageSender(sender, chrome.runtime.id)) return { ok: false, error: "Screenshot notes must come from holt's note prompt." };
+      if (!isScreenshotNoteFinishMessage(message)) return { ok: false, error: "Malformed screenshot note." };
+      return finishScreenshotNote(message.id, message.note);
+
+    case "screenshot-note:draft":
+      // The same prompt, as the user types: kept with the pending screenshot
+      // so the paths that write it without the prompt's answer keep the words.
+      if (!isOwnPageSender(sender, chrome.runtime.id)) return { ok: false, error: "Screenshot notes must come from holt's note prompt." };
+      if (!isScreenshotNoteDraftMessage(message)) return { ok: false, error: "Malformed screenshot note." };
+      return saveScreenshotDraft(message.id, message.draft).then(() => ({ ok: true }));
 
     case "entry-created":
       // The note popup (possibly in its own window, i.e. a tab) or the
@@ -97,10 +121,32 @@ onMessage((message: Message, sender) => {
       if (!fromOffscreen(sender)) return undefined;
       void closeOffscreenIfIdle();
       return { ok: true };
+    case "recorder:transcript":
+      // Forward to the box on the page.
+      if (!fromOffscreen(sender) || !isRecorderTranscriptMessage(message)) return undefined;
+      void relayTranscript(message);
+      return { ok: true };
+    case "recorder:finished":
+      // Save the transcript, or let the user review it first.
+      if (!fromOffscreen(sender) || !isRecorderFinishedMessage(message)) return undefined;
+      void finishTranscript(message);
+      return { ok: true };
+
+    // ---- from the transcript box, i.e. from inside a web page ---------------
+    // Each is checked against the tab the recording's box was put in.
+    case "voice-overlay:stop":
+      if (!isVoiceOverlayStopMessage(message)) return undefined;
+      return stopFromOverlay(sender, message.id);
+    case "voice-overlay:draft":
+      if (!isVoiceOverlayDraftMessage(message)) return undefined;
+      return saveDraft(message, sender).then(() => ({ ok: true }));
+    case "voice-overlay:decision":
+      if (!isVoiceOverlayDecisionMessage(message)) return undefined;
+      return decide(message, sender);
 
     default:
-      // entry-added / toast / recorder:transcript are for the panel;
-      // offscreen:* for the offscreen document; helper:* for content scripts.
+      // entry-added / toast are for the panel; offscreen:* for the offscreen
+      // document; helper:* and the other voice-overlay:* for content scripts.
       return undefined;
   }
 });
@@ -110,34 +156,62 @@ function fromOffscreen(sender: chrome.runtime.MessageSender): boolean {
   return isSenderPage(sender, chrome.runtime.id, OFFSCREEN_URL);
 }
 
-// The toolbar indicator follows the recording state and the project name,
-// whichever context changed them (worker, panel, or a previous worker
-// instance). storage.onChanged also wakes the worker, so it can't be missed.
+// The toolbar indicator follows the recording state and the server for the
+// page in front, whichever context changed them (worker, panel, or a
+// previous worker instance). storage.onChanged also wakes the worker, so it
+// can't be missed.
 onRecordingStateChanged(() => void refreshIndicator());
 onStateChanged("serverInfo", () => void refreshIndicator());
 
-// Clicking the toolbar icon opens the side panel.
+// Is there a holt server for the page in front? Re-checked when another page
+// comes to the front or finishes loading, and when the settings change; no
+// timers (see server-info.ts for exactly when, and what it costs).
+chrome.tabs.onActivated.addListener(() => void refreshServerInfo());
+// Unfiltered on purpose: Chrome's tabs.onUpdated takes no filter argument
+// (`{ properties: ["status"] }` is Firefox-only: Chrome 155 throws at
+// registration, which stops this whole file, as smoke showed). So every
+// tab change wakes the worker; onTabUpdated returns at once unless it is a
+// finished page load in an active tab.
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => void onTabUpdated(changeInfo, tab));
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) void refreshServerInfo();
+});
+onSettingsChanged(() => void refreshServerInfo());
+
+// Clicking the toolbar icon opens the menu (manifest action.default_popup,
+// menu.html). Opening an action's popup counts as invoking the action, so
+// it grants `activeTab` for the tab like the shortcuts do: the menu's
+// screenshots and tab recording rely on that.
 //
-// Chrome offers a declarative shortcut for this,
-// sidePanel.setPanelBehavior({ openPanelOnActionClick: true }), but with it
-// the click is routed straight to the side panel and is NOT treated as an
-// action invocation, so it does not grant `activeTab` (verified with Chrome
-// 155: captures from the panel then fail). Handling the click ourselves gives
-// us both: action.onClicked grants activeTab for the tab, and the click is a
-// user gesture, so sidePanel.open() is allowed if called synchronously.
-//
-// The behaviour flag is persisted by Chrome, so we explicitly turn it off on
-// every start in case an earlier build turned it on (otherwise onClicked
-// would never fire).
+// Chrome also has sidePanel.setPanelBehavior({ openPanelOnActionClick: true }),
+// which would route the click straight to the side panel instead. That flag
+// is persisted by Chrome, so we explicitly turn it off on every start in
+// case an earlier build turned it on.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error: unknown) => {
   console.warn("[holt] setPanelBehavior failed", error);
 });
-chrome.action.onClicked.addListener((tab) => openSidePanel(tab.windowId));
+
+// The screenshot note prompt was closed without Save/Skip: write the
+// screenshot with whatever was typed (pending-screenshot.ts ignores other
+// windows). A window event, so it also wakes a stopped worker.
+chrome.windows.onRemoved.addListener((windowId) => void onPromptWindowClosed(windowId));
+
+// The browser was quit with a note prompt open: storage.session is gone,
+// but the pending screenshot's backup in storage.local is not. The worker
+// start below already does this (reconcilePendingScreenshot also covers an
+// extension reload, which clears storage.session without a browser
+// restart); registering onStartup makes sure a browser start wakes us for it.
+chrome.runtime.onStartup.addListener(() => void reconcilePendingScreenshot());
 
 // On every worker start: forget recordings nothing backs any more, and make
 // the icon match the state (the action's badge/icon survive worker restarts,
-// but not an extension reload).
+// but not an extension reload). Likewise, write a screenshot whose note
+// prompt went away unanswered (or whose session storage did, see onStartup
+// above), and check the server for the page in front
+// (the stored answer may predate a browser restart or extension reload).
 void reconcileRecordingState().then(refreshIndicator);
+void reconcilePendingScreenshot();
+void refreshServerInfo();
 
 /**
  * Test seam: lets scripts/e2e.mjs run a keyboard command, since a real
@@ -149,18 +223,11 @@ void reconcileRecordingState().then(refreshIndicator);
 
 // ---------------------------------------------------------------------------
 
-async function handleCaptureRequest(windowId: number, mode: CaptureRequestMode): Promise<CaptureResponse> {
-  // The side panel isn't a tab, so we look up the active tab of its window.
-  // Without the "tabs" permission this still works; url/title are only
-  // filled in if we have access to the tab (see shared/page-context.ts).
+/**
+ * The toolbar menu's item: the command on the active tab of the menu's
+ * window (handleCommand retargets it if that is one of our own pages).
+ */
+async function runFromMenu({ command, windowId }: MenuRunRequest): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, windowId });
-  if (!tab) return { ok: false, error: "No active tab in this window." };
-  return takeScreenshot(mode, tab);
-}
-
-type CaptureRequestMode = Parameters<typeof takeScreenshot>[0];
-
-async function handleRecorderToggle(request: RecorderToggleRequest): Promise<RecorderToggleResponse> {
-  const [tab] = await chrome.tabs.query({ active: true, windowId: request.windowId });
-  return request.recorder === "tab" ? toggleTabRecording(tab) : toggleVoice(pageContextFromTab(tab));
+  handleCommand(command, tab);
 }

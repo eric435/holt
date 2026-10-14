@@ -10,14 +10,22 @@
  *  - it survives navigations and needs no host permissions or content
  *    script on every site.
  *
- * Badge: "REC" (red) for a tab or window/screen recording, "MIC" (orange)
+ * Badge: "REC" (red) for a tab recording, "MIC" (orange)
  * for a voice note, "REC" if both (the tooltip lists both). The badge is
  * also used for short "✓"/"!" flashes (notify.ts), which is why the icon
  * itself gets a red dot too (indicator.ts): the dot stays visible while the
  * badge is busy flashing.
+ *
+ * Not recording: no badge while holt is reachable (the tooltip names the
+ * project), and a red "!" while no holt server answers for the page in
+ * front (`serverInfo`, background/server-info.ts), so you see it before
+ * your first capture fails rather than after. Only on pages on this machine
+ * (loopback), though: on any other website there is nothing to auto-detect,
+ * and a permanently red icon while you browse the web would be noise. The
+ * toolbar menu explains the problem on every page.
  */
 
-import type { RecordingState } from "../shared/state.js";
+import type { RecordingState, ServerInfo } from "../shared/state.js";
 import type { ShortcutMap } from "../shared/shortcuts.js";
 
 export const REC_COLOR = "#e03131";
@@ -26,8 +34,8 @@ export const MIC_COLOR = "#f08c00";
 export interface IndicatorInput {
   recording: RecordingState;
   shortcuts: ShortcutMap;
-  /** From the server's /status, when the panel has seen it. */
-  projectName?: string | undefined;
+  /** The server for the page in front, as the worker last checked it. */
+  server?: ServerInfo | undefined;
   /** Epoch ms -> "14:02". Injected so tests don't depend on the time zone. */
   formatClock?: (epochMs: number) => string;
 }
@@ -43,18 +51,13 @@ export interface Indicator {
   title: string;
 }
 
-export function indicatorFor({ recording, shortcuts, projectName, formatClock = clock }: IndicatorInput): Indicator {
+export function indicatorFor({ recording, shortcuts, server, formatClock = clock }: IndicatorInput): Indicator {
+  const projectName = server?.ok ? server.project : null;
   const name = projectName ? `holt (${projectName})` : "holt";
   const parts: string[] = [];
 
   const { screen, voice } = recording;
-  if (screen) {
-    if (screen.source === "tab") {
-      parts.push(`recording tab since ${formatClock(screen.startedAt)} (${stopHint(shortcuts["toggle-recording"])})`);
-    } else {
-      parts.push(`recording a window or screen since ${formatClock(screen.startedAt)} (stop it in the side panel or Chrome's sharing bar)`);
-    }
-  }
+  if (screen) parts.push(`recording tab since ${formatClock(screen.startedAt)} (${stopHint(shortcuts["toggle-recording"])})`);
   if (voice) {
     const mic = voice.microphoneFallback
       ? ` on the default microphone (selected one not found)`
@@ -65,7 +68,10 @@ export function indicatorFor({ recording, shortcuts, projectName, formatClock = 
   }
 
   if (parts.length === 0) {
-    return { recording: false, text: "", color: REC_COLOR, title: `${name}: open the QA side panel` };
+    if (server && !server.ok && server.localPage) {
+      return { recording: false, text: "!", color: REC_COLOR, title: `holt: no server for this page — ${server.message}` };
+    }
+    return { recording: false, text: "", color: REC_COLOR, title: name };
   }
   return {
     recording: true,
@@ -76,7 +82,7 @@ export function indicatorFor({ recording, shortcuts, projectName, formatClock = 
 }
 
 function stopHint(shortcut: string | undefined): string {
-  return shortcut ? `${shortcut} to stop` : "stop it in the side panel";
+  return shortcut ? `${shortcut} to stop` : "click to stop";
 }
 
 function clock(epochMs: number): string {

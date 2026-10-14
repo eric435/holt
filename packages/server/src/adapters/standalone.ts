@@ -1,6 +1,6 @@
 /**
  * Standalone adapter: a bare node:http server that serves only holt.
- * This is what `npx holt-qa` runs.
+ * This is what `npx holt` runs.
  *
  * Responsibilities beyond "call the handler":
  *  - bind to config.host:config.port (loopback by default) and warn loudly
@@ -11,7 +11,7 @@
  */
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { BASE_PATH, TOKEN_HEADER } from "@holt/protocol";
+import { BASE_PATH, DEFAULT_HOST, DEFAULT_PORT, TOKEN_HEADER } from "@holt/protocol";
 import type { Holt } from "../core.js";
 import { isLoopbackHostname } from "../http/cors.js";
 import { sendJson } from "../http/errors.js";
@@ -139,7 +139,12 @@ function printBanner(logger: Logger, { config }: Holt, url: string): void {
   logger.info(`v${VERSION} serving ${describeProject(config.project)} at ${url}${BASE_PATH}`);
   logger.info(`Writing sessions to ${config.outputDir}`);
   if (config.configFile) logger.info(`Config: ${config.configFile}`);
-  logger.info(`Connect: open the holt extension's side panel and set the server URL to ${url}`);
+  // The extension's fallback server URL defaults to this address.
+  if (url === `http://${DEFAULT_HOST}:${DEFAULT_PORT}`) {
+    logger.info("Connect: nothing to set up. This is the holt extension's default server URL.");
+  } else {
+    logger.info(`Connect: in the holt extension's settings (toolbar menu > Settings), set the server URL to ${url}`);
+  }
   if (config.token !== null) {
     logger.info(`A token is required (${TOKEN_HEADER}); enter the same token in the extension settings.`);
   }

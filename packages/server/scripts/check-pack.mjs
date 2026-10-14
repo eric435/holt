@@ -2,7 +2,7 @@
 // something it needs. CI previews the file list with `npm pack --dry-run`;
 // this turns that preview into a check. Run after `build`.
 //
-//   pnpm --filter holt-qa check-pack
+//   pnpm --filter @velvet-thunder/holt check-pack
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 

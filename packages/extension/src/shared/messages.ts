@@ -3,23 +3,34 @@
  *
  * holt runs code in five places that cannot share memory:
  *
- *   service worker (background)  <-- chrome.runtime.sendMessage --  side panel, note popup
+ *   service worker (background)  <-- chrome.runtime.sendMessage --  note popup ("I saved this entry")
  *   service worker (background)  <-- chrome.runtime.sendMessage --  content scripts
  *   service worker (background)  -- chrome.tabs.sendMessage -->     content scripts
  *   service worker (background)  -- chrome.runtime.sendMessage -->  side panel (broadcast)
  *   service worker (background)  <-- chrome.runtime.sendMessage --> offscreen document (recorders)
- *   offscreen document           -- chrome.runtime.sendMessage -->  side panel (live transcript)
+ *   offscreen document           -- chrome.runtime.sendMessage -->  worker (live transcript, finished recordings)
+ *   service worker (background)  <-- chrome.tabs.sendMessage -->    voice overlay (editable transcript on the page)
+ *   service worker (background)  <-- chrome.runtime.sendMessage --  toolbar menu (menu.html)
+ *   service worker (background)  <-- chrome.runtime.sendMessage --  screenshot note prompt (note.html?mode=screenshot)
+ *   service worker (background)  <-- chrome.runtime.sendMessage --  menu, side panel ("check the server again")
  *
  * Messages are JSON-serialised when they cross a context boundary, so only
  * plain data goes through here (no Blobs, no MediaStreams, no class
  * instances, no functions). That is also why whoever records something
  * uploads it: the offscreen document uploads tab recordings and voice notes,
- * the side panel uploads window/screen recordings, and the worker uploads
- * the screenshots it took.
+ * the worker uploads the screenshots it took, and the note popup posts its
+ * own note.
  *
  * Message names: `offscreen:*` are requests the worker sends to the
- * offscreen document; `recorder:*` are what the offscreen document reports
- * (plus `recorder:toggle`, the panel asking the worker to start/stop one).
+ * offscreen document; `recorder:*` are what the offscreen document reports;
+ * `voice-overlay:*` go between the worker and the transcript box on the page
+ * (shown for voice notes and tab recordings alike); `menu:run` is the
+ * toolbar menu asking the worker to do what one of the shortcuts does;
+ * `screenshot-note:*` are the note prompt shown after a screenshot: its
+ * text as the user types (`draft`, so no way out loses it) and the user's
+ * answer (`finish`), after which the worker writes the screenshot's one
+ * entry; `server-info:refresh` asks the worker to check the server for the
+ * page in front again (background/server-info.ts).
  *
  * ---------------------------------------------------------------------------
  * The async-response gotcha
@@ -39,7 +50,7 @@
  * calling `sendResponse`, so the context that does handle it can answer.
  */
 
-import type { Entry, PageContext, ScreenshotMode, SessionInfo } from "@holt/protocol";
+import type { Entry, PageContext, SessionInfo } from "@holt/protocol";
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -51,13 +62,6 @@ export interface CssRect {
   y: number;
   width: number;
   height: number;
-}
-
-/** Side panel -> worker: take a screenshot of the active tab in `windowId`. */
-export interface CaptureRequest {
-  type: "capture";
-  mode: ScreenshotMode;
-  windowId: number;
 }
 
 /** Content script (area-select) -> worker: the user finished dragging. */
@@ -108,6 +112,46 @@ export interface EntryCreatedMessage {
   session: SessionInfo;
 }
 
+/**
+ * Screenshot note prompt -> worker: the user answered the prompt for the
+ * pending screenshot `id` (see background/pending-screenshot.ts): Save with
+ * `note`, or Skip (`note` empty). The worker posts the screenshot entry, with
+ * the note if there is one, and answers with it.
+ */
+export interface ScreenshotNoteFinishMessage {
+  type: "screenshot-note:finish";
+  id: string;
+  note: string;
+}
+
+export type ScreenshotNoteFinishResponse =
+  | {
+      ok: true;
+      /** The entry written; absent if this screenshot had already been saved (without the note), or was dropped. */
+      entry?: Entry;
+      /**
+       * The screenshot's session was gone (the server no longer has its
+       * upload as an unused file of the current session), so `entry` is the
+       * user's words as a separate note entry, or, with nothing typed,
+       * nothing was written.
+       */
+      sessionGone?: true;
+    }
+  | { ok: false; error: string };
+
+/**
+ * Screenshot note prompt -> worker: what is in the textarea now (debounced,
+ * and once more when the prompt goes away). Kept with the pending
+ * screenshot, so the paths that write it without the prompt's answer (the
+ * next screenshot, the window closing, a browser restart) still have the
+ * user's words.
+ */
+export interface ScreenshotNoteDraftMessage {
+  type: "screenshot-note:draft";
+  id: string;
+  draft: string;
+}
+
 // ---- recorders (offscreen document) ---------------------------------------
 
 export type RecorderKind = "tab" | "voice";
@@ -125,14 +169,33 @@ export interface RecorderSettings {
   microphoneLabel: string;
 }
 
-/** Side panel -> worker: start or stop a recorder (same as the shortcut). */
-export interface RecorderToggleRequest {
-  type: "recorder:toggle";
-  recorder: RecorderKind;
-  /** The panel's window; the worker records that window's active tab. */
+/**
+ * The shortcuts the toolbar menu runs through the worker (a subset of
+ * CommandName in shared/shortcuts.ts). Its Quick note item opens the note
+ * page in the menu's own popup instead, and Settings opens the panel itself.
+ */
+export type MenuCommand = "screenshot-area" | "screenshot-viewport" | "screenshot-full" | "toggle-voice" | "toggle-recording";
+
+/**
+ * Toolbar menu -> worker: do what this shortcut does, on the active tab of
+ * `windowId`. Answered right away, before the work is done, so the menu can
+ * close (it has to, for an area selection) without cutting the work short.
+ */
+export interface MenuRunRequest {
+  type: "menu:run";
+  command: MenuCommand;
   windowId: number;
 }
 
+/**
+ * Menu / side panel -> worker: check the server for the page in front again
+ * and update `serverInfo` (background/server-info.ts). Answered once done.
+ */
+export interface ServerInfoRefreshRequest {
+  type: "server-info:refresh";
+}
+
+/** What starting or stopping a recorder came to (the shortcuts, the menu, the box's Stop). */
 export type RecorderToggleResponse = { ok: true; running: boolean } | { ok: false; error: string };
 
 /** Worker -> offscreen: record the tab behind `streamId` (from chrome.tabCapture.getMediaStreamId). */
@@ -165,9 +228,19 @@ export type OffscreenStartResponse =
       error: string;
       /** DOMException name (NotAllowedError, NotFoundError, ...) so the worker can offer the right fix. */
       errorName?: string;
+      /**
+       * The recorder was already running a recording, with this id: one the
+       * worker has lost track of (its state was cleared under it), since the
+       * worker only starts a recorder whose slot is empty. The worker stops
+       * it (which saves it) rather than leaving it orphaned.
+       */
+      runningId?: string;
     };
 
-/** Worker -> offscreen: stop a recorder; it then uploads and reports `entry-created`. */
+/**
+ * Worker -> offscreen: stop a recorder. It reports `recorder:finished` with
+ * the transcript, then waits for `offscreen:commit` before it uploads.
+ */
 export interface OffscreenStopRequest {
   type: "offscreen:stop";
   recorder: RecorderKind;
@@ -178,13 +251,30 @@ export interface OffscreenStatusRequest {
   type: "offscreen:status";
 }
 
+/**
+ * Worker -> offscreen: what to do with a finished recording (`recorder:finished`):
+ * save it with `transcript` (the user's reviewed text), or throw it away.
+ */
+export interface OffscreenCommitRequest {
+  type: "offscreen:commit";
+  id: string;
+  save: boolean;
+  transcript: string;
+}
+
+export interface OffscreenCommitResponse {
+  ok: true;
+  /** False if no finished recording with this id was waiting (already committed, or timed out and saved). */
+  found: boolean;
+}
+
 export interface OffscreenStatusResponse {
   ok: true;
   /** Id of the running recording per recorder, or null. */
   tab: string | null;
   voice: string | null;
-  /** Recordings stopped but still uploading. */
-  uploading: number;
+  /** Recordings stopped but not saved yet (waiting for the user's review, or uploading). */
+  finishing: number;
 }
 
 /** Offscreen -> worker: a recorder stopped (by request, or because its stream ended). */
@@ -192,6 +282,19 @@ export interface RecorderStoppedMessage {
   type: "recorder:stopped";
   recorder: RecorderKind;
   id: string;
+}
+
+/**
+ * Offscreen -> worker: recording `id` has stopped and this is its complete
+ * transcript. The worker lets the user review it (voice-overlay:finish) and
+ * answers with `offscreen:commit`.
+ */
+export interface RecorderFinishedMessage {
+  type: "recorder:finished";
+  recorder: RecorderKind;
+  id: string;
+  transcript: string;
+  error?: string;
 }
 
 /** Offscreen -> worker: show this to the user (the worker owns toasts and the badge fallback). */
@@ -207,11 +310,100 @@ export interface RecorderIdleMessage {
   type: "recorder:idle";
 }
 
-/** Offscreen -> side panel: live transcript of the running voice note (broadcast, best effort). */
+/**
+ * Offscreen -> worker: live transcript of a running voice note or tab
+ * recording (best effort). The worker forwards it to the box on the page.
+ */
 export interface RecorderTranscriptMessage {
   type: "recorder:transcript";
+  recorder: RecorderKind;
+  id: string;
+  /** Everything recognised so far; only ever grows. */
   final: string;
   interim: string;
+  /** Why transcription stopped working, if it did (the audio is still recorded). */
+  error?: string;
+}
+
+// ---- voice overlay (content script: the editable transcript on the page) --
+
+/**
+ * What the user has made of a transcript so far: their `text`, and the
+ * recogniser's `final` it was based on (speech recognised later is appended
+ * to `text`; see shared/transcript-text.ts).
+ */
+export interface TranscriptDraft {
+  text: string;
+  heard: string;
+}
+
+/** Worker -> voice overlay: show this (creates the box if needed). */
+export interface VoiceOverlayUpdate {
+  type: "voice-overlay:update";
+  /** The recording this box belongs to. */
+  id: string;
+  recorder: RecorderKind;
+  /** When the recording started (epoch ms), for the timer. */
+  startedAt: number;
+  final: string;
+  interim: string;
+  error?: string;
+  /** The user's edits, kept by the worker, for a box re-created after a navigation. */
+  draft?: TranscriptDraft;
+}
+
+/**
+ * Worker -> voice overlay: recording `id` stopped and this is its whole
+ * transcript. The box closes (review: false: save the transcript as is) or,
+ * if the user has clicked into it or edited it, stays open for them to
+ * finish and Save or Discard (review: true; the answer comes later as
+ * `voice-overlay:decision`).
+ */
+export interface VoiceOverlayFinish {
+  type: "voice-overlay:finish";
+  id: string;
+  transcript: string;
+}
+
+export interface VoiceOverlayFinishResponse {
+  ok: true;
+  review: boolean;
+}
+
+/**
+ * Worker -> voice overlay: hide the box for a screenshot (answered once the
+ * page has repainted without it) or show it again.
+ */
+export interface VoiceOverlayVisibility {
+  type: "voice-overlay:visibility";
+  hidden: boolean;
+}
+
+/** Worker -> voice overlay: recording `id` is gone (nothing to save); remove its box. */
+export interface VoiceOverlayClose {
+  type: "voice-overlay:close";
+  id: string;
+}
+
+/** Voice overlay -> worker: the user clicked Stop in the box of recording `id`. */
+export interface VoiceOverlayStop {
+  type: "voice-overlay:stop";
+  id: string;
+}
+
+/** Voice overlay -> worker: the user edited the transcript (debounced); kept so a navigation doesn't lose it. */
+export interface VoiceOverlayDraft {
+  type: "voice-overlay:draft";
+  id: string;
+  draft: TranscriptDraft;
+}
+
+/** Voice overlay -> worker: the user reviewed recording `id`'s transcript: Save (with `text`) or Discard. */
+export interface VoiceOverlayDecision {
+  type: "voice-overlay:decision";
+  id: string;
+  save: boolean;
+  text: string;
 }
 
 /** Worker -> page-helper content script. */
@@ -256,21 +448,32 @@ export interface PageMetrics {
 }
 
 export type Message =
-  | CaptureRequest
   | AreaSelectedMessage
   | AreaCancelledMessage
   | EntryAddedMessage
   | ToastMessage
   | EntryCreatedMessage
-  | RecorderToggleRequest
+  | MenuRunRequest
+  | ScreenshotNoteFinishMessage
+  | ScreenshotNoteDraftMessage
+  | ServerInfoRefreshRequest
   | OffscreenStartTabRequest
   | OffscreenStartVoiceRequest
   | OffscreenStopRequest
   | OffscreenStatusRequest
+  | OffscreenCommitRequest
   | RecorderStoppedMessage
+  | RecorderFinishedMessage
   | RecorderToastMessage
   | RecorderIdleMessage
   | RecorderTranscriptMessage
+  | VoiceOverlayUpdate
+  | VoiceOverlayVisibility
+  | VoiceOverlayFinish
+  | VoiceOverlayClose
+  | VoiceOverlayStop
+  | VoiceOverlayDraft
+  | VoiceOverlayDecision
   | HelperMetricsRequest
   | HelperScrollRequest
   | HelperRestoreRequest;
@@ -279,21 +482,32 @@ export type MessageType = Message["type"];
 
 /** What the receiver answers for each message type. */
 export interface ResponseMap {
-  capture: CaptureResponse;
   "area-selected": Ack;
   "area-cancelled": Ack;
   "entry-added": Ack;
   toast: Ack;
   "entry-created": Ack;
-  "recorder:toggle": RecorderToggleResponse;
+  "menu:run": Ack | { ok: false; error: string };
+  "screenshot-note:finish": ScreenshotNoteFinishResponse;
+  "screenshot-note:draft": Ack;
+  "server-info:refresh": Ack;
   "offscreen:start-tab": OffscreenStartResponse;
   "offscreen:start-voice": OffscreenStartResponse;
   "offscreen:stop": { ok: true; wasRunning: boolean };
   "offscreen:status": OffscreenStatusResponse;
+  "offscreen:commit": OffscreenCommitResponse;
   "recorder:stopped": Ack;
+  "recorder:finished": Ack;
   "recorder:toast": Ack;
   "recorder:idle": Ack;
   "recorder:transcript": Ack;
+  "voice-overlay:update": Ack;
+  "voice-overlay:visibility": Ack;
+  "voice-overlay:finish": VoiceOverlayFinishResponse;
+  "voice-overlay:close": Ack;
+  "voice-overlay:stop": RecorderToggleResponse;
+  "voice-overlay:draft": Ack;
+  "voice-overlay:decision": Ack | { ok: false; error: string };
   "helper:metrics": PageMetrics;
   "helper:scroll-to": HelperScrollResponse;
   "helper:restore": Ack;
@@ -305,13 +519,16 @@ export interface Ack {
   ok: true;
 }
 
+/** What `takeScreenshot` (background/actions.ts) came to. */
 export type CaptureResponse =
   | {
       ok: true;
-      /** The entry that was written. Absent while an area selection is pending. */
-      entry?: Entry;
-      /** Area mode: the overlay is up; the result arrives as an `entry-added` broadcast. */
-      pending?: boolean;
+      /**
+       * Always true: the entry is written later, once the user answered the
+       * note prompt (or, in area mode, finished dragging first). It arrives
+       * as an `entry-added` broadcast.
+       */
+      pending: true;
     }
   | { ok: false; error: string };
 
@@ -323,27 +540,36 @@ export type CaptureResponse =
 // ---------------------------------------------------------------------------
 
 const MESSAGE_TYPES: ReadonlySet<string> = new Set<MessageType>([
-  "capture",
   "area-selected",
   "area-cancelled",
   "entry-added",
   "toast",
   "entry-created",
-  "recorder:toggle",
+  "menu:run",
+  "screenshot-note:finish",
+  "screenshot-note:draft",
+  "server-info:refresh",
   "offscreen:start-tab",
   "offscreen:start-voice",
   "offscreen:stop",
   "offscreen:status",
+  "offscreen:commit",
   "recorder:stopped",
+  "recorder:finished",
   "recorder:toast",
   "recorder:idle",
   "recorder:transcript",
+  "voice-overlay:update",
+  "voice-overlay:visibility",
+  "voice-overlay:finish",
+  "voice-overlay:close",
+  "voice-overlay:stop",
+  "voice-overlay:draft",
+  "voice-overlay:decision",
   "helper:metrics",
   "helper:scroll-to",
   "helper:restore",
 ]);
-
-const SCREENSHOT_MODES: ReadonlySet<string> = new Set<ScreenshotMode>(["viewport", "full-page", "area"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -356,16 +582,6 @@ function isFiniteNumber(value: unknown): value is number {
 /** Is this one of our messages at all (by `type`)? */
 export function isMessage(value: unknown): value is Message {
   return isRecord(value) && typeof value.type === "string" && MESSAGE_TYPES.has(value.type);
-}
-
-export function isCaptureRequest(value: unknown): value is CaptureRequest {
-  return (
-    isRecord(value) &&
-    value.type === "capture" &&
-    typeof value.mode === "string" &&
-    SCREENSHOT_MODES.has(value.mode) &&
-    Number.isInteger(value.windowId)
-  );
 }
 
 export function isCssRect(value: unknown): value is CssRect {
@@ -435,14 +651,23 @@ export function isEntryCreatedMessage(value: unknown): value is EntryCreatedMess
   );
 }
 
-export function isRecorderToggleRequest(value: unknown): value is RecorderToggleRequest {
-  return (
-    isRecord(value) &&
-    value.type === "recorder:toggle" &&
-    typeof value.recorder === "string" &&
-    RECORDERS.has(value.recorder) &&
-    Number.isInteger(value.windowId)
-  );
+const MENU_COMMANDS: ReadonlySet<string> = new Set<MenuCommand>(["screenshot-area", "screenshot-viewport", "screenshot-full", "toggle-voice", "toggle-recording"]);
+
+export function isMenuRunRequest(value: unknown): value is MenuRunRequest {
+  return isRecord(value) && value.type === "menu:run" && typeof value.command === "string" && MENU_COMMANDS.has(value.command) && Number.isInteger(value.windowId);
+}
+
+/**
+ * The prompt is an extension page, but a screenshot note is user text bound
+ * for notes.md, so the shape is still checked (the length cap matches the
+ * transcript box's).
+ */
+export function isScreenshotNoteFinishMessage(value: unknown): value is ScreenshotNoteFinishMessage {
+  return isRecord(value) && value.type === "screenshot-note:finish" && isRecordingId(value.id) && isTranscriptText(value.note);
+}
+
+export function isScreenshotNoteDraftMessage(value: unknown): value is ScreenshotNoteDraftMessage {
+  return isRecord(value) && value.type === "screenshot-note:draft" && isRecordingId(value.id) && isTranscriptText(value.draft);
 }
 
 export function isRecorderStoppedMessage(value: unknown): value is RecorderStoppedMessage {
@@ -450,7 +675,63 @@ export function isRecorderStoppedMessage(value: unknown): value is RecorderStopp
 }
 
 export function isRecorderTranscriptMessage(value: unknown): value is RecorderTranscriptMessage {
-  return isRecord(value) && value.type === "recorder:transcript" && typeof value.final === "string" && typeof value.interim === "string";
+  return (
+    isRecord(value) &&
+    value.type === "recorder:transcript" &&
+    isRecorderKind(value.recorder) &&
+    typeof value.id === "string" &&
+    typeof value.final === "string" &&
+    typeof value.interim === "string" &&
+    (value.error === undefined || typeof value.error === "string")
+  );
+}
+
+export function isRecorderFinishedMessage(value: unknown): value is RecorderFinishedMessage {
+  return (
+    isRecord(value) &&
+    value.type === "recorder:finished" &&
+    isRecorderKind(value.recorder) &&
+    typeof value.id === "string" &&
+    typeof value.transcript === "string" &&
+    (value.error === undefined || typeof value.error === "string")
+  );
+}
+
+export function isOffscreenCommitRequest(value: unknown): value is OffscreenCommitRequest {
+  return isRecord(value) && value.type === "offscreen:commit" && typeof value.id === "string" && typeof value.save === "boolean" && typeof value.transcript === "string";
+}
+
+// The overlay's messages come from inside a web page: shapes are checked
+// here, and the worker also checks that the sender is the tab the box is in.
+
+/** Longest transcript the overlay may send (a very long note is ~10k characters). */
+const MAX_TRANSCRIPT_CHARS = 100_000;
+
+function isTranscriptText(value: unknown): value is string {
+  return typeof value === "string" && value.length <= MAX_TRANSCRIPT_CHARS;
+}
+
+function isRecordingId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 100;
+}
+
+export function isVoiceOverlayStopMessage(value: unknown): value is VoiceOverlayStop {
+  return isRecord(value) && value.type === "voice-overlay:stop" && isRecordingId(value.id);
+}
+
+export function isVoiceOverlayDraftMessage(value: unknown): value is VoiceOverlayDraft {
+  return (
+    isRecord(value) &&
+    value.type === "voice-overlay:draft" &&
+    isRecordingId(value.id) &&
+    isRecord(value.draft) &&
+    isTranscriptText(value.draft.text) &&
+    isTranscriptText(value.draft.heard)
+  );
+}
+
+export function isVoiceOverlayDecisionMessage(value: unknown): value is VoiceOverlayDecision {
+  return isRecord(value) && value.type === "voice-overlay:decision" && isRecordingId(value.id) && typeof value.save === "boolean" && isTranscriptText(value.text);
 }
 
 function isPageContext(value: unknown): value is PageContext {
@@ -485,7 +766,11 @@ export function isOffscreenStartVoiceRequest(value: unknown): value is Offscreen
 }
 
 export function isOffscreenStopRequest(value: unknown): value is OffscreenStopRequest {
-  return isRecord(value) && value.type === "offscreen:stop" && typeof value.recorder === "string" && RECORDERS.has(value.recorder);
+  return isRecord(value) && value.type === "offscreen:stop" && isRecorderKind(value.recorder);
+}
+
+function isRecorderKind(value: unknown): value is RecorderKind {
+  return typeof value === "string" && RECORDERS.has(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -494,7 +779,7 @@ export function isOffscreenStopRequest(value: unknown): value is OffscreenStopRe
 // `chrome.runtime.onMessage` only delivers messages from our own extension,
 // but "our own extension" includes content scripts, which run inside web
 // pages. A compromised page renderer could forge messages from them. So:
-//  - commands that act (capture) and broadcasts the panel trusts
+//  - commands that act (menu:run) and broadcasts the panel trusts
 //    (entry-added, toast) must come from an extension page or the worker,
 //    never from a tab;
 //  - area-select results must come from the top frame of the tab we

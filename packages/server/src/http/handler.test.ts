@@ -338,11 +338,14 @@ describe("entries", () => {
     const { api } = await startServer();
     const cases: Array<[unknown, RegExp]> = [
       [{ kind: "bogus" }, /"kind"/],
-      [{ kind: "note", capturedAt: "yesterday", page: { url: "", title: "" }, text: "x" }, /"capturedAt"/],
-      [{ kind: "note", capturedAt: new Date().toISOString(), page: { url: 1, title: "" }, text: "x" }, /"page\.url"/],
-      [{ kind: "note", capturedAt: new Date().toISOString(), page: { url: "", title: "" }, text: "  " }, /"text"/],
+      [{ kind: "note", capturedAt: "yesterday", page: { url: "", title: "" }, note: "x" }, /"capturedAt"/],
+      [{ kind: "note", capturedAt: new Date().toISOString(), page: { url: 1, title: "" }, note: "x" }, /"page\.url"/],
+      [{ kind: "note", capturedAt: new Date().toISOString(), page: { url: "", title: "" }, note: "  " }, /"note"/],
+      [{ kind: "note", capturedAt: new Date().toISOString(), page: { url: "", title: "" }, text: "old field" }, /"text" .*extension is out of date/],
+      [{ ...screenshotEntry("001-screenshot.png"), transcript: "old field" }, /"transcript" .*extension is out of date/],
+      [{ kind: "note", capturedAt: new Date().toISOString(), page: { url: "", title: "t".repeat(1_001) }, note: "x" }, /"page\.title" is too long/],
       [{ ...screenshotEntry("001-screenshot.png"), mode: "fisheye" }, /"mode"/],
-      [{ kind: "voice-note", capturedAt: new Date().toISOString(), page: { url: "", title: "" }, durationMs: 1 }, /"file", "transcript"/],
+      [{ kind: "voice-note", capturedAt: new Date().toISOString(), page: { url: "", title: "" }, durationMs: 1 }, /"file", "note"/],
       [[1, 2], /JSON object/],
     ];
     for (const [body, message] of cases) {
@@ -350,6 +353,48 @@ describe("entries", () => {
       expect(res.status).toBe(400);
       expect(((await res.json()) as ErrorResponse).error.message).toMatch(message);
     }
+  });
+
+  it("rejects an entry whose file was uploaded for a different kind, and keeps the upload usable", async () => {
+    const { api, holt } = await startServer();
+    const { file } = (await (await uploadPng(api)).json()) as MediaUploadResponse;
+    expect(file).toBe("001-screenshot.png");
+
+    const asRecording = await postJson(`${api}/entries`, {
+      kind: "recording",
+      capturedAt: new Date().toISOString(),
+      page: { url: "http://localhost:5173/", title: "Home" },
+      file,
+      durationMs: 1000,
+    });
+    expect(asRecording.status).toBe(400);
+    const error = ((await asRecording.json()) as ErrorResponse).error;
+    expect(error.code).toBe("bad-request");
+    expect(error.message).toMatch(/was uploaded for a different entry kind/);
+    const notesPath = path.join(holt.sessions.current?.dir ?? "", "notes.md");
+    expect(await readFile(notesPath, "utf8")).not.toContain("Recording");
+
+    // The failed claim did not consume the upload.
+    expect((await postJson(`${api}/entries`, screenshotEntry(file))).status).toBe(200);
+  });
+
+  it("lets any media entry use an upload sent without a kind header (its name claims no kind)", async () => {
+    const { api } = await startServer();
+    const upload = await fetch(`${api}/media`, {
+      method: "POST",
+      headers: { ...EXT_HEADERS, "content-type": "video/webm" },
+      body: PNG_BYTES,
+    });
+    const { file } = (await upload.json()) as MediaUploadResponse;
+    expect(file).toBe("001-media.webm");
+    const res = await postJson(`${api}/entries`, {
+      kind: "recording",
+      capturedAt: new Date().toISOString(),
+      page: { url: "", title: "" },
+      file,
+      durationMs: 1000,
+    });
+    expect(res.status).toBe(200);
   });
 
   it("requires a JSON content type (415) and valid JSON (400)", async () => {
@@ -393,7 +438,7 @@ describe("happy path", () => {
       kind: "note",
       capturedAt: new Date().toISOString(),
       page: { url: "http://localhost:5173/checkout", title: "](http://evil) sneaky" },
-      text: "Coupon field accepts whitespace-only input.",
+      note: "Coupon field accepts whitespace-only input.",
       extraField: "dropped",
     });
     const note = (await noteRes.json()) as EntryResponse;
@@ -571,5 +616,104 @@ describe("handler fall-through", () => {
     const ours = await fetch(`${origin}${BASE_PATH}/status`, { headers: EXT_HEADERS });
     expect(ours.status).toBe(200);
     expect(results).toEqual([false, false, false, false, true]);
+  });
+});
+
+describe("route edge cases", () => {
+  it("session/start: validates the optional title", async () => {
+    const { api } = await startServer();
+    const cases: Array<[unknown, number, RegExp | null]> = [
+      [[1], 400, /JSON object/],
+      ["title", 400, /JSON object/],
+      [{ title: 42 }, 400, /"title" must be a string/],
+      [{ title: "x".repeat(201) }, 400, /at most 200 characters/],
+    ];
+    for (const [body, status, message] of cases) {
+      const res = await postJson(`${api}/session/start`, body);
+      expect(res.status, JSON.stringify(body)).toBe(status);
+      if (message) expect(((await res.json()) as ErrorResponse).error.message).toMatch(message);
+    }
+  });
+
+  it("session/start: a blank or null title falls back to the configured one; a real one is used", async () => {
+    const { api } = await startServer({ sessionTitle: "Default QA" });
+    for (const [body, heading] of [
+      [{ title: "   " }, /^# Default QA /],
+      [{ title: null }, /^# Default QA /],
+      [{ title: "x".repeat(200) }, /^# x{200} /],
+      [{ title: "  Checkout pass  " }, /^# Checkout pass /],
+    ] as const) {
+      const res = await postJson(`${api}/session/start`, body);
+      expect(res.status).toBe(200);
+      const { session } = (await res.json()) as SessionResponse;
+      expect(await readFile(path.join(session?.dir ?? "", "notes.md"), "utf8")).toMatch(heading);
+    }
+  });
+
+  it("entries: an empty body is a 400, not a crash", async () => {
+    const { api } = await startServer();
+    const res = await fetch(`${api}/entries`, { method: "POST", headers: { ...EXT_HEADERS, "content-type": "application/json" } });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as ErrorResponse).error.message).toMatch(/Body is required/);
+  });
+
+  it("entries: a JSON body over the 256 KiB limit is a 413", async () => {
+    const { api } = await startServer();
+    const res = await postJson(`${api}/entries`, {
+      kind: "note",
+      capturedAt: new Date().toISOString(),
+      page: { url: "", title: "" },
+      note: "x".repeat(300 * 1024),
+    });
+    expect(res.status).toBe(413);
+  });
+
+  it("media: an empty upload is a 400 and leaves no file and no reservation behind", async () => {
+    const { api, holt } = await startServer();
+    const res = await fetch(`${api}/media`, {
+      method: "POST",
+      headers: { ...EXT_HEADERS, "content-type": "image/png", [KIND_HEADER]: "screenshot" },
+      body: new Uint8Array(0),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as ErrorResponse).error.message).toMatch(/empty/);
+    const dir = holt.sessions.current?.dir ?? "";
+    expect(await readdir(dir)).toEqual(["notes.md"]);
+    // The next upload is not blocked by a leftover reservation.
+    expect((await uploadPng(api)).status).toBe(200);
+  });
+
+  it.each(["constructor", "__proto__", "toString"])("media: content type %s is not a supported type", async (type) => {
+    const { api } = await startServer();
+    const res = await fetch(`${api}/media`, {
+      method: "POST",
+      headers: { ...EXT_HEADERS, "content-type": `image/${type}` },
+      body: PNG_BYTES,
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("wrong method on a known path is a 404 JSON error", async () => {
+    const { api } = await startServer();
+    for (const [method, p] of [
+      ["GET", "/entries"],
+      ["POST", "/status"],
+      ["DELETE", "/session/start"],
+    ] as const) {
+      const res = await fetch(`${api}${p}`, { method, headers: EXT_HEADERS });
+      expect(res.status, `${method} ${p}`).toBe(404);
+      expect(((await res.json()) as ErrorResponse).error.code).toBe("not-found");
+    }
+  });
+
+  it("the token check is exact: case, prefixes and extensions are refused", async () => {
+    // (Leading/trailing spaces are not tested: HTTP strips them from header
+    // values before the server sees them.)
+    const { api } = await startServer({ token: "S3cret" });
+    for (const token of ["s3cret", "S3cre", "S3cretX", "S3cret,S3cret"]) {
+      const res = await fetch(`${api}/status`, { headers: { ...EXT_HEADERS, [TOKEN_HEADER]: token } });
+      expect(res.status, JSON.stringify(token)).toBe(403);
+    }
+    expect((await fetch(`${api}/status`, { headers: { ...EXT_HEADERS, [TOKEN_HEADER]: "S3cret" } })).status).toBe(200);
   });
 });

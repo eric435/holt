@@ -7,18 +7,23 @@
  * the known fields instead of passing the parsed body through: unexpected
  * keys never reach the markdown writer or the response.
  *
- * Whether `file` refers to a real upload is checked later by the session
- * store, which knows what was uploaded.
+ * Free-text fields are capped per field (ENTRY_FIELD_LIMITS in
+ * @holt/protocol): the JSON body limit bounds the request as a whole, not
+ * how much of it a single title or URL may write into notes.md.
+ *
+ * Whether `file` refers to a real upload (of the same kind) is checked later
+ * by the session store, which knows what was uploaded.
  */
-import type {
-  EntryInput,
-  EntryKind,
-  NoteEntry,
-  PageContext,
-  RecordingEntry,
-  ScreenshotEntry,
-  ScreenshotMode,
-  VoiceNoteEntry,
+import {
+  ENTRY_FIELD_LIMITS,
+  type EntryInput,
+  type EntryKind,
+  type NoteEntry,
+  type PageContext,
+  type RecordingEntry,
+  type ScreenshotEntry,
+  type ScreenshotMode,
+  type VoiceNoteEntry,
 } from "@holt/protocol";
 import { HttpError } from "./errors.js";
 
@@ -28,14 +33,34 @@ const SCREENSHOT_MODES: readonly ScreenshotMode[] = ["viewport", "full-page", "a
 
 const ENTRY_KINDS: readonly EntryKind[] = ["screenshot", "recording", "voice-note", "note"];
 
+/**
+ * Keys that earlier versions of the protocol used for the user's words
+ * (`transcript` on voice notes, `text` on notes; both are `note` now).
+ * Unknown keys are normally dropped, but dropping these would throw away
+ * what the user said or typed without anyone noticing, so a body that
+ * carries one is refused with a message that says what to do.
+ */
+const RETIRED_KEYS = ["transcript", "text"] as const;
+
 export function parseEntryInput(body: unknown): EntryInput {
   const o = asObject(body, "entry");
   // Check the kind first: if it is wrong, that is the most useful error.
   oneOf(o, "kind", ENTRY_KINDS);
+  // Then retired keys, before any field check: an old extension's voice
+  // note with only a `transcript` would otherwise get a confusing "needs
+  // file or note" error, and one with a file would silently lose its words.
+  for (const key of RETIRED_KEYS) {
+    if (Object.hasOwn(o, key)) {
+      bad(
+        `"${key}" is no longer part of the protocol (the user's words go in "note"). ` +
+          `The holt extension is out of date: update it to match this server.`,
+      );
+    }
+  }
   const base = {
     capturedAt: isoDate(o, "capturedAt"),
     page: parsePage(o.page),
-    ...optionalText(o, "note"),
+    ...optionalText(o, "note", ENTRY_FIELD_LIMITS.note),
   };
 
   switch (o.kind) {
@@ -43,7 +68,7 @@ export function parseEntryInput(body: unknown): EntryInput {
       const entry: ScreenshotEntry = {
         kind: "screenshot",
         ...base,
-        file: requiredString(o, "file"),
+        file: fileName(o),
         mode: oneOf(o, "mode", SCREENSHOT_MODES),
         width: nonNegativeInteger(o, "width"),
         height: nonNegativeInteger(o, "height"),
@@ -54,31 +79,29 @@ export function parseEntryInput(body: unknown): EntryInput {
       const entry: RecordingEntry = {
         kind: "recording",
         ...base,
-        file: requiredString(o, "file"),
+        file: fileName(o),
         durationMs: nonNegativeNumber(o, "durationMs"),
-        ...optionalText(o, "transcript"),
       };
       return entry;
     }
     case "voice-note": {
-      const file = o.file === undefined ? {} : { file: requiredString(o, "file") };
-      const transcript = optionalText(o, "transcript");
-      if (!("file" in file) && !("transcript" in transcript)) {
-        bad(`A voice-note needs "file", "transcript", or both`);
+      const file = o.file === undefined ? {} : { file: fileName(o) };
+      if (!("file" in file) && base.note === undefined) {
+        bad(`A voice-note needs "file", "note", or both`);
       }
       const entry: VoiceNoteEntry = {
         kind: "voice-note",
         ...base,
         ...file,
-        ...transcript,
         durationMs: nonNegativeNumber(o, "durationMs"),
       };
       return entry;
     }
     case "note": {
-      const text = requiredString(o, "text");
-      if (text.trim() === "") bad(`"text" must not be empty`);
-      const entry: NoteEntry = { kind: "note", ...base, text };
+      // The note is the whole entry here, so it is required (and not blank).
+      const note = requiredString(o, "note", "note", ENTRY_FIELD_LIMITS.note);
+      if (note.trim() === "") bad(`"note" must not be empty`);
+      const entry: NoteEntry = { kind: "note", ...base, note };
       return entry;
     }
     default:
@@ -101,21 +124,40 @@ function asObject(value: unknown, name: string): Json {
 
 function parsePage(value: unknown): PageContext {
   const o = asObject(value, "page");
-  return { url: requiredString(o, "url", "page.url"), title: requiredString(o, "title", "page.title") };
+  return {
+    url: requiredString(o, "url", "page.url", ENTRY_FIELD_LIMITS["page.url"]),
+    title: requiredString(o, "title", "page.title", ENTRY_FIELD_LIMITS["page.title"]),
+  };
 }
 
-function requiredString(o: Json, key: string, label = key): string {
+function fileName(o: Json): string {
+  return requiredString(o, "file", "file", ENTRY_FIELD_LIMITS.file);
+}
+
+function requiredString(o: Json, key: string, label = key, maxLength = Number.POSITIVE_INFINITY): string {
   const v = o[key];
   if (typeof v !== "string") bad(`"${label}" must be a string`);
+  checkLength(v, label, maxLength);
   return v;
 }
 
-/** Optional free text. Missing, null or blank all mean "not provided". */
-function optionalText<K extends string>(o: Json, key: K): { [P in K]?: string } {
+/**
+ * Optional free text. Missing, null or blank all mean "not provided".
+ * The length cap applies before trimming: a megabyte of spaces is still a
+ * megabyte the client should not have sent.
+ */
+function optionalText<K extends string>(o: Json, key: K, maxLength: number): { [P in K]?: string } {
   const v = o[key];
   if (v === undefined || v === null) return {};
   if (typeof v !== "string") bad(`"${key}" must be a string`);
+  checkLength(v, key, maxLength);
   return v.trim() === "" ? {} : ({ [key]: v } as { [P in K]?: string });
+}
+
+function checkLength(value: string, label: string, maxLength: number): void {
+  if (value.length > maxLength) {
+    bad(`"${label}" is too long (${value.length} characters; at most ${maxLength} allowed)`);
+  }
 }
 
 function isoDate(o: Json, key: string): string {

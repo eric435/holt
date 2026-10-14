@@ -1,6 +1,6 @@
 /**
- * Keyboard shortcuts in the panel: the one-time "set the rest" hint in the
- * Capture card, and the list of current bindings under Settings.
+ * Keyboard shortcuts in the panel: the one-time "set the rest" hint under
+ * the cards, and the list of current bindings under Settings.
  *
  * Bindings come from chrome.commands.getAll() (store.shortcuts, refreshed
  * whenever the panel becomes visible again, since the user may just have

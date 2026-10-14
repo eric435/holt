@@ -1,10 +1,14 @@
 /**
- * Keyboard behaviour of the note fields (side panel and the Alt+T popup):
+ * Keyboard behaviour of the note fields (the note page: the Alt+T quick
+ * note and the screenshot note prompt; and the transcript box on the page
+ * while it is up for review):
  *
  *   Enter              save
  *   Shift+Enter        newline (the textarea's default, so we do nothing)
  *   Ctrl/Cmd+Enter     save too (the old binding; muscle memory)
- *   Esc                cancel (the popup closes; the panel ignores it)
+ *   Esc                cancel: the quick note closes; the screenshot prompt
+ *                      skips when nothing is typed and saves otherwise
+ *                      (note/note.ts); the transcript box ignores it
  *
  * While an input method editor is composing (Japanese, Chinese, ...), Enter
  * confirms the composition and must not save; `isComposing` says so. Chrome

@@ -6,9 +6,15 @@
  *   POST /session/stop           -> SessionResponse
  *   POST /media                  -> MediaUploadResponse
  *          raw bytes in the body; `Content-Type` must be in ACCEPTED_MEDIA_TYPES;
- *          `x-holt-kind` header says which entry kind the bytes are for
- *          (used only to pick a readable file name).
+ *          `x-holt-kind` header says which entry kind the bytes are for:
+ *          it picks a readable file name, and only an entry of that kind
+ *          may reference the file (else 400). Without the header the file
+ *          is named `NNN-media.ext` and any media entry may use it.
  *   POST /entries                -> EntryResponse     body: EntryInput
+ *          per-field length caps (ENTRY_FIELD_LIMITS): page.title 1,000
+ *          characters, page.url 8,192, note 100,000, file 255; longer is a
+ *          400 naming the field. The retired keys `transcript` and `text`
+ *          are a 400 ("the extension is out of date"), not ignored.
  *
  * Every request must carry `x-holt-client: extension` and, if the server
  * is configured with a token, `x-holt-token`.

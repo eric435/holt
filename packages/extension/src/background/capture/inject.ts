@@ -14,6 +14,7 @@
 
 export const AREA_SELECT_FILE = "content/area-select.js";
 export const PAGE_HELPER_FILE = "content/page-helper.js";
+export const VOICE_OVERLAY_FILE = "content/voice-overlay.js";
 
 export async function injectFile(tabId: number, file: string): Promise<void> {
   await chrome.scripting.executeScript({ target: { tabId }, files: [file] });

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://unpkg.com/holt/schema.json",
+  "$id": "https://unpkg.com/@velvet-thunder/holt/schema.json",
   "title": "holt.config.json",
   "description": "Configuration for holt, the local server for the holt Chrome extension. Every key is optional. This schema is for editor autocomplete only; the server validates the file itself.",
   "type": "object",
@@ -21,7 +21,7 @@
       "minimum": 0,
       "maximum": 65535,
       "default": 4848,
-      "description": "Port for the standalone server (`npx holt-qa`). Ignored by the Vite plugin, which uses Vite's port."
+      "description": "Port for the standalone server (`npx holt`). Ignored by the Vite plugin, which uses Vite's port."
     },
     "host": {
       "type": "string",

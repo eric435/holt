@@ -10,7 +10,8 @@ does not, and what you should know before changing the defaults.
 The server trusts two things: the loopback interface, and the Chrome
 extension. Everything else is hostile: web pages you visit (including the
 app you are testing), other extensions, other users on the same machine,
-and the network. The extension trusts the server it is pointed at and its
+and the network. The extension trusts the server it is pointed at (or
+finds on a loopback page's origin, see "Finding the server" below) and its
 own pages; it treats every web page, including ones it injects scripts
 into, as hostile.
 
@@ -98,8 +99,9 @@ as Vite is. Two consequences:
   plugin warns, and the token rule above applies.
 - Vite serves your project root statically, which includes the session
   folder. The plugin returns 404 for any request into `outputDir`, and the
-  peer range requires Vite 5.4.12 or newer because older versions answered
-  CORS requests with `*`, which would have let any website read captures by
+  peer range (`^5.4.12 || >=6.0.9`) excludes every Vite release that
+  answered CORS requests with `*` (GHSA-vg6x-rcgg-rjx6: before 5.4.12, and
+  6.0.0 to 6.0.8), which would have let any website read captures by
   guessing the timestamp-based folder names.
 
 ## The extension
@@ -124,8 +126,9 @@ as Vite is. Two consequences:
   local server.
 - Content scripts run inside hostile pages. The worker only accepts
   `area-selected` from the top frame of the tab it injected into, only
-  accepts capture and recorder requests and panel-bound messages from the
-  extension's own pages, and only believes recorder reports from its own
+  accepts the toolbar menu's commands, panel-bound messages and the
+  screenshot note prompt's answer and draft from the extension's own pages,
+  and only believes recorder reports from its own
   offscreen document (checked by sender URL). The offscreen document only
   takes orders from the extension's own pages too, so a page cannot start
   a recording or make the recorder upload somewhere else. Settings storage
@@ -136,7 +139,41 @@ as Vite is. Two consequences:
   messages from an extension page or the worker reach only the extension's
   own pages and worker, never content scripts.
 - The server URL and token are stored in `chrome.storage.local`, never
-  synced to your Google account.
+  synced to your Google account. So is, until its entry is written, a
+  backup of the screenshot waiting in the note prompt (its page URL and
+  title, and what you have typed), so quitting the browser doesn't lose
+  it; like the settings, content scripts cannot read it.
+- The API client refuses HTTP redirects (`redirect: "error"`), so whatever
+  answers on a loopback origin cannot bounce the probe, a capture or the
+  token to another host.
+
+### Finding the server (auto-detect)
+
+By default the extension sends a page's captures to that page's own origin
+when the page is on `http://localhost` or `http://127.0.0.1` (any port: the
+hosts in host_permissions) and that origin answers `GET /__holt/status` as
+holt; otherwise to the configured URL (`http://127.0.0.1:4848` unless
+changed). An origin that has answered as holt is not given up on for the
+rest of the browser session: if it stops answering, captures there fail
+rather than go to the configured URL, which may be a different project's
+server.
+The trade-off: any local process that answers `/__holt/status` like holt on
+the origin of a loopback tab gets that tab's screenshots, recordings and
+notes, and, because the following requests carry it, the token if you set
+one. That is the same trust the extension already placed in whatever
+listens on the fixed loopback URL (any local process can bind
+`127.0.0.1:4848` first), now extended to the origin of the local page you
+are capturing, which is usually your own dev server. What does not change:
+only loopback origins are ever probed, so no site on your network or the
+internet is asked or sent anything; the probe itself carries the client
+header but not the token (holt that requires one answers with its own
+`forbidden` error, which is enough to recognise it), so a local server that
+is not holt never sees the token; a web page can only influence the choice
+through its own origin (it cannot point captures anywhere else, and cannot
+read or write the probe cache in `chrome.storage.session`); and each
+capture's server is fixed when it starts. If this is not acceptable on your
+machine, set **Settings → Server → Always use this URL**: nothing is
+probed.
 
 ## What this does not protect against
 

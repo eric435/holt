@@ -39,7 +39,7 @@ Options:
   -v, --version    print the version
 
 Flags override holt.config.json, which overrides the defaults.
-Docs: https://www.npmjs.com/package/holt-qa`;
+Docs: https://www.npmjs.com/package/@velvet-thunder/holt`;
 
 export function parseCliArgs(argv: string[]): CliCommand {
   let parsed;

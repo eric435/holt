@@ -8,9 +8,10 @@
  *   src/permissions/permissions.ts -> dist/permissions.js        (ESM)
  *   src/offscreen/index.ts       -> dist/offscreen.js            (ESM: the recorders' hidden page)
  *   src/note/note.ts             -> dist/note.js                 (ESM: the Alt+T note popup)
+ *   src/menu/menu.ts             -> dist/menu.js                 (ESM: the toolbar menu, action popup)
  *   src/content/area-select.ts   -> dist/content/area-select.js  (IIFE: injected with
  *   src/content/page-helper.ts   -> dist/content/page-helper.js   executeScript({ files }),
- *                                                                  which runs classic scripts only)
+ *   src/content/voice-overlay.ts -> dist/content/voice-overlay.js which runs classic scripts only)
  *   manifest.json (version from package.json), HTML, CSS, public/icons -> dist/
  *
  * `@holt/protocol` is TypeScript source in the workspace; esbuild follows
@@ -50,6 +51,7 @@ const STATIC_FILES = [
   ["src/permissions/permissions.html", "permissions.html"],
   ["src/offscreen/offscreen.html", "offscreen.html"],
   ["src/note/note.html", "note.html"],
+  ["src/menu/menu.html", "menu.html"],
 ];
 
 async function copyStatic() {
@@ -84,6 +86,7 @@ const moduleBuild = {
     permissions: "src/permissions/permissions.ts",
     offscreen: "src/offscreen/index.ts",
     note: "src/note/note.ts",
+    menu: "src/menu/menu.ts",
   },
   outdir: dist,
   plugins: [copyStaticPlugin],
@@ -95,6 +98,7 @@ const contentBuild = {
   entryPoints: {
     "content/area-select": "src/content/area-select.ts",
     "content/page-helper": "src/content/page-helper.ts",
+    "content/voice-overlay": "src/content/voice-overlay.ts",
   },
   outdir: dist,
 };

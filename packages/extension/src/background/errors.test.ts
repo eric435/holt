@@ -29,12 +29,13 @@ describe("friendlyCaptureError: pass-through of our own messages", () => {
 });
 
 describe("friendlyRecordingError", () => {
-  it("explains a missing activeTab grant and offers the window/screen option", () => {
+  it("explains a missing activeTab grant (and offers nothing holt no longer has)", () => {
     const msg = friendlyRecordingError(
       new Error("Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured."),
     );
     expect(msg).toMatch(/invoke holt/);
-    expect(msg).toMatch(/Record a window or screen/);
+    expect(msg).toMatch(/toolbar icon/);
+    expect(msg).not.toMatch(/side panel|window or screen/);
   });
   it("explains a tab that is already captured", () => {
     expect(friendlyRecordingError(new Error("Cannot capture a tab with an active stream."))).toMatch(/already being captured/);
