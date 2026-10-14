@@ -60,26 +60,26 @@ published by [the Release workflow](.github/workflows/release.yml), never
 from a laptop: the package sets `publishConfig.provenance`, which needs the
 OIDC identity of a CI run, so a local `npm publish` fails.
 
-1. Bump `version` in `packages/server/package.json` (and nothing else; the
-   server reads its version from there), and commit.
-2. Tag that commit with the same version and push both:
+To release, bump `version` in `packages/server/package.json` (and nothing
+else; the server reads its version from there) and merge to `main`. On
+every push to `main`, the workflow checks whether npm already has that
+version. If not, it runs `pnpm typecheck`, `pnpm build`, `pnpm test` and
+`check-pack`, publishes with provenance, and tags the commit `v<version>`.
+A prerelease version (`0.2.0-beta.1`) is published under the `next`
+dist-tag instead of `latest`. The workflow can also be started by hand from
+the Actions tab (`workflow_dispatch`).
 
-   ```bash
-   git tag v0.1.0
-   git push origin main v0.1.0
-   ```
+The workflow authenticates with npm trusted publishing: on npmjs.com, the
+package's Settings → Trusted Publisher names GitHub Actions, `eric435/holt`,
+workflow `release.yml`. No npm token is stored in the repository.
 
-3. The workflow checks that the tag matches the package version, runs
-   `pnpm typecheck`, `pnpm build`, `pnpm test` and `check-pack`, then
-   publishes with provenance. It can also be started by hand from the
-   Actions tab (`workflow_dispatch`); that publishes the version in
-   package.json at the chosen ref.
-
-The workflow needs one repository secret, `NPM_TOKEN`: a **granular** npm
-access token with read and write (publish) permission for the
-`@velvet-thunder` scope (or just the `@velvet-thunder/holt` package), and
-nothing else. `prepublishOnly` rebuilds and re-runs the pack check, so even
-a publish that bypasses the workflow cannot ship a stale `dist/`.
+The very first publish of a new package can't use trusted publishing yet,
+so for that one the workflow uses an `NPM_TOKEN` repository secret if it
+exists: a **granular** npm token with read and write permission for the
+`@velvet-thunder` scope only, "Bypass 2FA" ticked, and a short expiry. Once
+the package exists, set up the trusted publisher, delete the secret, revoke
+the token, and set the package's Publishing access to "Require two-factor
+authentication and disallow tokens".
 
 ## Where things go
 

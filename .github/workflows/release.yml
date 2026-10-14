@@ -1,59 +1,121 @@
 name: Release
 
-# Publishes @velvet-thunder/holt to npm. Runs on a pushed version tag
-# (`v0.1.0`), or by hand from the Actions tab. See CONTRIBUTING.md,
-# "Releasing".
+# Publishes @velvet-thunder/holt to npm whenever main has a version of
+# packages/server/package.json that npm doesn't have yet. Releasing is:
+# bump the version, merge to main. This workflow verifies the commit,
+# publishes, then tags it `v<version>`. It can also be started by hand from
+# the Actions tab (`workflow_dispatch`), which does the same for the chosen
+# ref. See CONTRIBUTING.md, "Releasing".
 #
 # Why CI and not `npm publish` from a laptop: the package sets
 # `publishConfig.provenance`, and npm can only generate a provenance
 # statement from a CI run with an OIDC identity (`id-token: write`). A local
 # publish fails on purpose, so every release is built from a commit anyone
 # can inspect.
+#
+# Authentication: npm trusted publishing (OIDC), configured on npmjs.com for
+# this repository and this file (release.yml). No token is stored. The one
+# exception is the package's very first publish, before a trusted publisher
+# could be set up: while an `NPM_TOKEN` repository secret exists, it is used
+# instead. Delete the secret once trusted publishing is configured.
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
-# Never run two publishes of the same ref at once.
+# Never run two publishes at once; a second push waits for the first.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  publish:
+  # Cheap check on every push: is this version already on npm?
+  check:
     runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.check.outputs.publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        name: Check whether this version is already published
+        run: |
+          name=$(node -p "require('./packages/server/package.json').name")
+          version=$(node -p "require('./packages/server/package.json').version")
+          # Exits 0 with no output when the package exists but this version
+          # doesn't; fails with E404 when the package doesn't exist at all.
+          # Any other failure (network, registry) fails the job rather than
+          # guessing.
+          if out=$(npm view "$name@$version" version 2>&1); then
+            [ -n "$out" ] && publish=false || publish=true
+          elif grep -q E404 <<<"$out"; then
+            publish=true
+          else
+            echo "$out" >&2
+            exit 1
+          fi
+          echo "$name@$version: publish=$publish"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the v<version> tag
+      id-token: write # trusted publishing and provenance
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+      # No `registry-url` here: it writes an .npmrc that reads
+      # NODE_AUTH_TOKEN, and an empty token can stop npm from falling back to
+      # trusted publishing. The token case is handled below.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          # Writes an .npmrc that reads the token from NODE_AUTH_TOKEN.
-          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@^11.5.1
       - run: pnpm install --frozen-lockfile
-      # A tag that disagrees with package.json would publish a version
-      # nobody tagged; fail before anything is built.
-      - name: Check the tag matches the package version
-        if: github.ref_type == 'tag'
-        run: |
-          version=$(node -p "require('./packages/server/package.json').version")
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match packages/server/package.json version $version" >&2
-            exit 1
-          fi
       - run: pnpm typecheck && pnpm build && pnpm test
       - name: Check published files
         run: pnpm --filter @velvet-thunder/holt check-pack
-      # --no-git-checks: a tag checkout is a detached HEAD, which pnpm's
-      # "must be on the publish branch" check would reject.
-      - name: Publish
-        run: pnpm --filter @velvet-thunder/holt publish --access public --no-git-checks
+      # pnpm packs (it rewrites `workspace:*` versions in package.json); npm
+      # publishes (it does the trusted-publishing exchange).
+      - name: Pack
+        run: pnpm --filter @velvet-thunder/holt pack --pack-destination "$RUNNER_TEMP/pack"
+      - name: Use NPM_TOKEN if set (first publish only)
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "Publishing with the NPM_TOKEN secret. Delete it once trusted publishing is set up."
+            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > "$HOME/.npmrc"
+          else
+            echo "Publishing with npm trusted publishing (OIDC)."
+          fi
+      - name: Publish
+        env:
           NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          # A prerelease (1.2.0-beta.1) must not become `latest`.
+          case "$VERSION" in
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          npm publish "$RUNNER_TEMP"/pack/*.tgz --access public --tag "$tag"
+      - name: Tag the release
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "Tag v$VERSION already exists; leaving it alone."
+          else
+            git tag "v$VERSION" "$GITHUB_SHA"
+            git push origin "v$VERSION"
+          fi
