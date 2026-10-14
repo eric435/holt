@@ -14,6 +14,7 @@
     "test:coverage": "pnpm -r --filter \"./packages/**\" run test:coverage",
     "typecheck": "pnpm -r --filter './packages/**' run typecheck",
     "dev:server": "pnpm --filter @velvet-thunder/holt run dev",
+    "start:server": "pnpm --filter @velvet-thunder/holt run build && node scripts/start-server.mjs",
     "dev:extension": "pnpm --filter @holt/extension run dev"
   },
   "devDependencies": {

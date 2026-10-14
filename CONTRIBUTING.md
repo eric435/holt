@@ -24,12 +24,25 @@ Load `packages/extension/dist` once as an unpacked extension
 (chrome://extensions → Developer mode → Load unpacked). After a rebuild, hit
 the reload icon on the extension card; the side panel reloads with it.
 
-Set the server URL in the settings panel (holt's menu → Settings) to the Vite origin printed by the example
-app (the plugin mounts the API on the same port), or run
-`npx @velvet-thunder/holt` in any project to use the standalone server on
-port 4848. (Not `npx holt` there: in a project that does not have the
-package installed, npx would fetch the unrelated `holt` package from the
-registry.)
+Nothing to configure for the example app: the plugin mounts the API on the
+Vite origin and the extension auto-detects it on that page.
+
+Every other page falls back to the standalone server on port 4848. To run
+that one from this repo against some project:
+
+```bash
+pnpm start:server ../some-project        # builds, then runs the CLI in that dir
+pnpm start:server ../some-project --port 4949
+```
+
+The server writes sessions into the directory it runs from, which is why the
+script takes a project directory. Note that `pnpm dev:server` does *not*
+start a server; it is `tsup --watch` and only rebuilds `packages/server/dist`
+while you edit server code (pair it with `start:server`, or restart the
+latter, to pick up changes). In a project that has the package installed,
+`npx holt` is the equivalent of `start:server`; without an install use
+`npx @velvet-thunder/holt` (plain `npx holt` would fetch the unrelated `holt`
+package from the registry).
 
 ## Checks that run in CI
 
