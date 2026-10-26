@@ -20,12 +20,14 @@
  *
  * Transcription is best-effort (see transcribe.ts): whatever happens with
  * the transcript, the audio recording continues and is returned, so the
- * user never loses what they said.
+ * user never loses what they said. It can also be off altogether
+ * (Settings.transcribe); then the recording is all there is, and
+ * offscreen/index.ts always uploads it.
  */
 
 import { AUDIO_TYPES, pickMimeType, record } from "../shared/media-recorder.js";
 import { openMicrophone, type TranscriptUpdate } from "../shared/speech.js";
-import { startTranscription } from "./transcribe.js";
+import { noTranscription, startTranscription } from "./transcribe.js";
 
 export interface VoiceResult {
   blob: Blob;
@@ -47,17 +49,19 @@ export interface StartedVoiceNote {
   microphoneFallback: boolean;
 }
 
+/** `transcribe` false (Settings.transcribe): record the audio only, never start a speech recogniser. */
 export async function startVoiceNote(
   microphoneId: string,
   onTranscript: (update: TranscriptUpdate) => void,
+  transcribe: boolean,
 ): Promise<StartedVoiceNote> {
   const { stream, fallback: microphoneFallback } = await openMicrophone(microphoneId);
 
   const track = stream.getAudioTracks()[0];
   const session = record(stream, pickMimeType(AUDIO_TYPES));
   // A clone, so the recogniser stopping/ending its track can never end the recording's.
-  const speechTrack = track?.clone();
-  const transcriber = startTranscription(onTranscript, speechTrack);
+  const speechTrack = transcribe ? track?.clone() : undefined;
+  const transcriber = transcribe ? startTranscription(onTranscript, speechTrack) : noTranscription();
 
   let result: Promise<VoiceResult> | null = null;
   const recording: VoiceRecording = {

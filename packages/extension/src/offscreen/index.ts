@@ -24,7 +24,9 @@
  *  - Our messages also wake the worker if Chrome has shut it down mid-recording.
  *
  * Both recorders transcribe the microphone live (transcribe.ts): a voice
- * note what it records, a tab recording the user's narration. The user can
+ * note what it records, a tab recording the user's narration; unless
+ * transcription is off in the settings (`settings.transcribe`), in which
+ * case no speech recogniser is started and the transcript is empty. The user can
  * edit the transcript in a box on the page while recording and review it
  * afterwards, so a stopped recording is not uploaded right away:
  *
@@ -72,9 +74,10 @@ import {
 } from "../shared/messages.js";
 import type { RecordedMedia } from "../shared/media-recorder.js";
 import { clampText } from "../shared/page-context.js";
+import { keepsVoiceAudio } from "../shared/settings.js";
 import { startTabRecording } from "./tab.js";
 import type { TranscriptResult, TranscriptUpdate } from "../shared/speech.js";
-import { startNarration } from "./transcribe.js";
+import { noTranscription, startNarration } from "./transcribe.js";
 import { startVoiceNote, type VoiceResult } from "./voice.js";
 
 /** How long a stopped recording waits for the user's review before it is saved as is. */
@@ -149,7 +152,8 @@ async function startTab(request: OffscreenStartTabRequest): Promise<OffscreenSta
     const recording = await startTabRecording(request.streamId, () => void finish("tab"));
     console.info("[holt] tab capture running at", recording.settings.width, "x", recording.settings.height);
     // Once the capture runs; it doesn't wait for (or depend on) the microphone.
-    const narration = startNarration(request.settings.microphoneId, transcriptSender("tab", request.id));
+    // With transcription off the microphone isn't opened at all: it is only there for the transcript.
+    const narration = request.settings.transcribe ? startNarration(request.settings.microphoneId, transcriptSender("tab", request.id)) : noTranscription();
     active.tab = {
       id: request.id,
       page: request.page,
@@ -168,7 +172,7 @@ async function startTab(request: OffscreenStartTabRequest): Promise<OffscreenSta
 async function startVoice(request: OffscreenStartVoiceRequest): Promise<OffscreenStartResponse> {
   if (active.voice) return { ok: false, error: "A voice note is already running.", runningId: active.voice.id };
   try {
-    const started = await startVoiceNote(request.settings.microphoneId, transcriptSender("voice", request.id));
+    const started = await startVoiceNote(request.settings.microphoneId, transcriptSender("voice", request.id), request.settings.transcribe);
     active.voice = {
       id: request.id,
       page: request.page,
@@ -288,9 +292,10 @@ async function saveTab(current: Active, media: RecordedMedia, transcript: string
 async function saveVoice(current: Active, result: VoiceResult, reviewed: string): Promise<void> {
   if (result.transcriptError) toast("info", result.transcriptError);
   const note = noteText(reviewed);
-  // Audio is kept if the user asked for it (off by default), and always when
-  // there are no usable words, or the voice note would be empty.
-  const keepAudio = current.settings.keepAudio || !note;
+  // Audio is kept if the user asked for it (off by default), always while
+  // transcription is off, and whenever there are no usable words, or the
+  // voice note would be empty (shared/settings.ts, unit-tested).
+  const keepAudio = keepsVoiceAudio(current.settings, note);
   const capturedAt = new Date(Date.now() - result.durationMs).toISOString();
   const base = { kind: "voice-note" as const, capturedAt, page: current.page, durationMs: result.durationMs };
   if (keepAudio) {

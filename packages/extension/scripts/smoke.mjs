@@ -9,7 +9,11 @@
  *   3. Extra checks: commands registered with the intended default keys (4
  *      bound, the rest unbound; CI runs on Linux, so this also catches a
  *      default that is a Chrome shortcut there, which Chrome refuses to
- *      assign), no offscreen document at startup, a voice
+ *      assign), no offscreen document at startup, the welcome tab opened
+ *      on install (exactly one; it names the server commands, lists the
+ *      real shortcut bindings, loads nothing remote, and its transcription
+ *      switch saves), the panel's transcription switch (keep audio shows
+ *      forced on while it is off, the stored choice untouched), a voice
  *      note without microphone permission fails fast and offers
  *      permissions.html in the panel, the side panel page renders without
  *      errors and migrates legacy storage.sync settings to storage.local, the on-demand content scripts work on a local fixture page
@@ -110,6 +114,68 @@ async function run(headless) {
     expect(behavior?.openPanelOnActionClick === false, "openPanelOnActionClick should be false");
     log(`commands: ${commands.join(", ")}; openPanelOnActionClick=${behavior?.openPanelOnActionClick}`);
 
+    // ---- 2b. first install: the welcome tab ----------------------------------
+    // A fresh profile, so runtime.onInstalled fired with reason "install" and
+    // the worker opened welcome.html in a tab. Reloaded once attached, so its
+    // first run is watched for errors too. Closed afterwards, so the rest of
+    // this test sees the same tabs as before the welcome page existed.
+    const welcomeUrl = `chrome-extension://${worker.extensionId}/welcome.html`;
+    const welcomeTargets = await waitFor(
+      async () => {
+        const found = (await cdp.send("Target.getTargets")).targetInfos.filter((t) => t.type === "page" && t.url === welcomeUrl);
+        return found.length ? found : null;
+      },
+      { timeoutMs: 5_000, what: "the welcome tab (runtime.onInstalled, reason install)" },
+    ).catch((e) => (problems.push(e.message), []));
+    expect(welcomeTargets.length <= 1, `${welcomeTargets.length} welcome tabs opened on install (expected 1)`);
+    let welcome;
+    if (welcomeTargets[0]) {
+      welcome = await attach(cdp, welcomeTargets[0].targetId);
+      await collector.watch(welcome);
+      await cdp.send("Page.enable", {}, welcome);
+      await cdp.send("Page.reload", {}, welcome);
+      // The server line settles on ok / down / needs-token (whether a holt server runs on this machine is not ours to assume).
+      const state = await waitFor(
+        () => evaluate(cdp, welcome, "(() => { const s = document.getElementById('server-line')?.dataset.state; return s && s !== 'checking' ? s : null; })()"),
+        { timeoutMs: 8_000, what: "the welcome page's server check" },
+      ).catch((e) => (problems.push(e.message), null));
+      const w = await evaluate(
+        cdp,
+        welcome,
+        `(() => ({
+          text: document.body.textContent,
+          server: document.getElementById('server-line').innerText,
+          rows: [...document.querySelectorAll('#shortcuts dt')].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent ?? ""]),
+          toggle: (() => { const i = document.querySelector('.transcribe-setting input'); return i ? { checked: i.checked, label: i.parentElement.textContent } : null; })(),
+          remote: performance.getEntriesByType("resource").map((r) => r.name)
+            .filter((u) => !u.startsWith(location.origin + "/") && !u.startsWith("http://127.0.0.1:") && !u.startsWith("http://localhost:")),
+        }))()`,
+      );
+      expect(w.text.includes("npx @velvet-thunder/holt") && w.text.includes('import holt from "@velvet-thunder/holt/vite"'), "the welcome page does not say how to start the server");
+      expect(w.text.includes("http://127.0.0.1:4848"), "the welcome page does not name the default server address");
+      expect(w.rows.length === EXPECTED_COMMANDS.length, `welcome page lists ${w.rows.length} shortcuts, expected ${EXPECTED_COMMANDS.length}`);
+      const areaRow = w.rows.find(([label]) => label === "Screenshot: select area");
+      expect(areaRow && areaRow[1] === bindings["screenshot-area"], `welcome page shows the area shortcut as ${JSON.stringify(areaRow)}, Chrome has ${bindings["screenshot-area"]}`);
+      expect(w.toggle?.checked === true && /Google/.test(w.toggle.label), `welcome page transcription switch: ${JSON.stringify(w.toggle)}`);
+      expect(/Google's speech service/.test(w.text), "the welcome page does not say what transcription sends to Google");
+      expect(w.remote.length === 0, `the welcome page loaded remote resources: ${w.remote.join(", ")}`);
+      // The switch saves at once (and back, so the rest of the test runs with the default).
+      const flip = (want) =>
+        evaluate(cdp, welcome, `(async () => {
+          document.querySelector('.transcribe-setting input').click();
+          for (let i = 0; i < 40; i++) {
+            const { transcribe } = await chrome.storage.local.get('transcribe');
+            if (transcribe === ${want}) return true;
+            await new Promise((r) => setTimeout(r, 50));
+          }
+          return false;
+        })()`);
+      expect(await flip(false), "turning transcription off on the welcome page did not save transcribe: false");
+      expect(await flip(true), "turning transcription back on on the welcome page did not save transcribe: true");
+      log(`welcome tab opened on install; server: ${state} "${w.server.replace(/\s+/g, " ")}"; ${w.rows.length} shortcuts; transcription switch saves`);
+      await cdp.send("Target.closeTarget", { targetId: welcomeTargets[0].targetId });
+    }
+
     // ---- 3. side panel page (opened as a tab: same page, same code) ---------
     // Seed legacy settings in storage.sync (where earlier builds kept them):
     // the panel must migrate them to storage.local on load.
@@ -131,6 +197,30 @@ async function run(headless) {
     expect(stores[1].serverUrl === "http://localhost:4999" && stores[1].keepAudio === false, `settings not migrated to storage.local: ${JSON.stringify(stores[1])}`);
     expect(serverLine.includes("localhost:4999"), "panel is not using the migrated server URL");
     log(`settings migration: sync -> local ${JSON.stringify(stores[1])}; sync now ${JSON.stringify(stores[0])}`);
+
+    // ---- 3a. transcription switch: keep-audio is forced on while it is off ----
+    const speech = await evaluate(cdp, panel, `(async () => {
+      const toggle = document.querySelector('.transcribe-setting input');
+      const keep = [...document.querySelectorAll('label.check')].find((l) => l.textContent.includes('keep the audio'))?.querySelector('input');
+      if (!toggle || !keep) return null;
+      const read = async () => ({ checked: keep.checked, disabled: keep.disabled, stored: (await chrome.storage.local.get(['transcribe', 'keepAudio'])) });
+      const until = async (cond) => { for (let i = 0; i < 40 && !cond(); i++) await new Promise((r) => setTimeout(r, 50)); };
+      const before = await read();
+      toggle.click();
+      await until(() => keep.disabled);
+      const off = await read();
+      toggle.click();
+      await until(() => !keep.disabled);
+      return { before, off, after: await read() };
+    })()`);
+    expect(speech, "the panel's Settings have no transcription switch (or no keep-audio checkbox)");
+    if (speech) {
+      expect(!speech.before.disabled && speech.before.checked === false, `keep audio before: ${JSON.stringify(speech.before)}`);
+      expect(speech.off.disabled && speech.off.checked && speech.off.stored.transcribe === false && speech.off.stored.keepAudio === false,
+        `with transcription off, keep audio should show checked+disabled without changing the stored choice: ${JSON.stringify(speech.off)}`);
+      expect(!speech.after.disabled && speech.after.checked === false && speech.after.stored.transcribe === true, `keep audio after turning transcription back on: ${JSON.stringify(speech.after)}`);
+      log(`panel transcription switch: off -> keep audio ${speech.off.checked ? "checked" : "unchecked"}/${speech.off.disabled ? "disabled" : "enabled"}, stored keepAudio ${speech.off.stored.keepAudio}; back on -> ${JSON.stringify(speech.after.stored)}`);
+    }
 
     // ---- 3b. voice note without microphone permission --------------------------
     // There is a (fake) microphone but no grant for the extension. The
@@ -367,7 +457,7 @@ async function run(headless) {
       fixture.close();
     }
 
-    for (const [name, session] of [["worker", worker.sessionId], ["side panel", panel], ["fixture page", page]]) {
+    for (const [name, session] of [["worker", worker.sessionId], ["welcome page", welcome], ["side panel", panel], ["fixture page", page]]) {
       if (session) for (const e of collector.get(session)) problems.push(`${name}: ${e}`);
     }
     return { ok: problems.length === 0, problems };

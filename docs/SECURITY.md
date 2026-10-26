@@ -140,10 +140,17 @@ as Vite is. Two consequences:
   also shows "REC" on its toolbar icon while it records. `offscreen` only lets the extension create its
   own hidden page (the recorders); it grants no access to anything.
 - Microphone access is a per-origin permission the user grants once on
-  holt's own permissions page. Voice notes and the live transcript use
-  Chrome's speech recognition, which sends audio to Google's speech
-  service (see the extension README); the audio file goes only to the
-  local server.
+  holt's own permissions page. Live transcripts (voice notes, tab-recording
+  narration, dictation in the note window) use Chrome's speech recognition
+  (`webkitSpeechRecognition`), which in Chrome sends the microphone audio
+  to Google's speech service while it listens. This is the one way holt
+  data leaves the machine other than to the holt server, so it is disclosed
+  next to a switch (Settings → Speech → **Transcribe speech**, also on the
+  welcome tab and the permissions page) and can be turned off: then no
+  recogniser is ever created, tab recordings don't open the microphone,
+  dictation is hidden, and voice notes keep their audio file instead of a
+  transcript. Recordings and audio files themselves go only to the holt
+  server.
 - Content scripts run inside hostile pages. The worker only accepts
   `area-selected` from the top frame of the tab it injected into, only
   accepts the toolbar menu's commands, panel-bound messages and the

@@ -154,16 +154,18 @@ src/
                   recording. Hosts the tab recorder (chrome.tabCapture stream
                   + MediaRecorder) and the voice recorder (getUserMedia +
                   MediaRecorder), both with a live Web Speech transcript of
-                  the microphone, and uploads what they record once the user
-                  has reviewed the transcript. Survives the side panel being
-                  closed.
+                  the microphone (unless transcription is off in the
+                  settings: then no recogniser is started), and uploads what
+                  they record once the user has reviewed the transcript.
+                  Survives the side panel being closed.
   menu/           menu.html, the toolbar action's popup: the capture items
                   (each runs the same command as its shortcut; Quick note
                   turns the menu into the note popup) or, while recording,
                   only Stop; and Settings, which opens the panel.
   sidepanel/      the "settings panel", optional: server/session status
                   for the page in front, this session's entries, settings
-                  (server mode + URL, token, microphone, keep audio).
+                  (server mode + URL, token, transcription, keep audio,
+                  microphone).
   note/           note.html, the Alt+T quick-note popup, and the note
                   prompt after a screenshot (same page, in a popup window,
                   with Skip and dictation).
@@ -181,7 +183,13 @@ src/
                   whoever records something uploads it.
   permissions/    a plain extension page opened in a tab when the microphone
                   is needed: the offscreen document can never show a
-                  permission prompt (it is invisible), a tab can.
+                  permission prompt (it is invisible), a tab can. Also shows
+                  the transcription switch and what it sends to Google.
+  welcome/        welcome.html, opened once in a tab by the worker on
+                  runtime.onInstalled with reason "install" (not on
+                  updates): that holt needs the local server, a live check
+                  of the fixed/fallback URL, the current shortcuts
+                  (chrome.commands.getAll) and the transcription switch.
 ```
 
 Three MV3 details that shaped the code and are worth knowing:
@@ -206,7 +214,7 @@ Three MV3 details that shaped the code and are worth knowing:
   synchronously anyway.)
 - **Offscreen documents only get `chrome.runtime`.** No storage, no action,
   no tabs. So the worker sends the recorder everything it needs (server
-  URL, token, microphone, page context) with each start request, and the
+  URL, token, transcribe/keep-audio, microphone, page context) with each start request, and the
   recorder reports state changes, saved entries and errors back by message;
   the worker updates storage.session, the indicator and the toasts.
 
@@ -220,7 +228,8 @@ extension pages (shared/settings.ts):
 | `serverMode` | `"auto"` | `"auto"`: find the server from the page (below); `"fixed"`: always `serverUrl` |
 | `serverUrl` | `http://127.0.0.1:4848` | the fallback in auto mode, the only server in fixed mode |
 | `token` | `""` | sent as `x-holt-token` when set |
-| `keepAudio` | `false` | upload voice notes' audio too, not just the words |
+| `transcribe` | `true` | live transcripts with Chrome's speech recognition, which sends the audio to Google. `false`: no recogniser anywhere (voice notes, narration, dictation), tab recordings don't open the microphone, and voice notes always keep their audio |
+| `keepAudio` | `false` | upload voice notes' audio too, not just the words (always, whatever this says, while `transcribe` is off or nothing was recognised: `keepsVoiceAudio`) |
 | `microphoneId`, `microphoneLabel` | system default | the microphone for voice notes and dictation |
 | `hideShortcutHint` | `false` | the panel's one-time shortcut tip was dismissed |
 

@@ -7,6 +7,8 @@
   never visible and so can never show a permission prompt; a tab can. The
   permission belongs to the extension's origin (chrome-extension://<id>), so
   granting it here also unlocks the offscreen recorder and the side panel.
+  Below the button: the transcription setting and what it sends to Google,
+  since this is where someone deciding about their microphone looks.
 -->
 <html lang="en">
   <head>
@@ -17,12 +19,16 @@
     <script type="module" src="permissions.js"></script>
   </head>
   <body>
-    <main style="max-width: 520px; margin: 40px auto">
+    <main class="page">
       <section class="card">
         <h2>Microphone access</h2>
         <p>holt records voice notes in the background, so they keep going with the side panel closed. Because that recorder is invisible, Chrome can't ask you there; allow the microphone for holt once on this page instead.</p>
         <button id="grant" class="big">Allow microphone</button>
         <p id="result" class="hint" role="status"></p>
+      </section>
+      <!-- Filled in by permissions.ts (src/sidepanel/ui/transcription.ts): what is sent to Google, and the switch. -->
+      <section id="transcription" class="card">
+        <h2>Transcription</h2>
       </section>
     </main>
   </body>

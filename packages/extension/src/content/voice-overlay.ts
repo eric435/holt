@@ -27,6 +27,10 @@
  * at the end, without moving the caret. What is being recognised right now
  * (interim results) is shown greyed out under the text, not in it.
  *
+ * With transcription turned off in holt's settings (`untranscribed`), the
+ * box works the same but only ever holds what the user types, and its
+ * placeholder says that nothing is being transcribed.
+ *
  * "Active" (keep the box open for review when the recording stops) means:
  * the user clicked into the text, or edited it. Otherwise the box closes and
  * the transcript is saved exactly as recognised.
@@ -284,7 +288,7 @@ interface Box {
 /** recording -> (Stop) stopping -> (finish) review -> (Save/Discard) saving -> gone */
 type BoxState = "recording" | "stopping" | "review" | "saving";
 
-function createBox({ id, recorder, startedAt, draft }: VoiceOverlayUpdate, layer: Layer, onGone: () => void): Box {
+function createBox({ id, recorder, startedAt, draft, untranscribed }: VoiceOverlayUpdate, layer: Layer, onGone: () => void): Box {
   const labels = LABELS[recorder];
   let state: BoxState = "recording";
   /** The recogniser's text that `text.value` already contains. */
@@ -306,7 +310,8 @@ function createBox({ id, recorder, startedAt, draft }: VoiceOverlayUpdate, layer
   const text = document.createElement("textarea");
   text.rows = 4;
   text.spellcheck = true;
-  text.placeholder = "Listening… Click here to edit as you talk.";
+  // Transcription off (holt's settings): nothing will appear by itself, so don't say "Listening".
+  text.placeholder = untranscribed ? "Transcription is off. Type a note here if you like." : "Listening… Click here to edit as you talk.";
   text.setAttribute("aria-label", `${labels.title} transcript`);
   const interim = el("div", "interim");
   interim.setAttribute("aria-live", "polite");
@@ -450,7 +455,9 @@ function createBox({ id, recorder, startedAt, draft }: VoiceOverlayUpdate, layer
     hide.hidden = true;
     interim.hidden = true;
     reviewRow.hidden = false;
-    text.placeholder = "Nothing was recognised. Type what you want to save, or discard.";
+    text.placeholder = untranscribed
+      ? "Transcription is off. Type a note to save with it, or discard."
+      : "Nothing was recognised. Type what you want to save, or discard.";
     if (!isFocused()) text.focus({ preventScroll: true });
   }
 

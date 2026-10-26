@@ -87,6 +87,8 @@ export interface TranscriptBoxState {
   startedAt: number;
   /** The user's edits, so a box re-created after a navigation keeps them. */
   draft?: TranscriptDraft;
+  /** Transcription was off when the recording started: the box says so (and only shows what the user types). */
+  untranscribed?: true;
 }
 
 /** Both recording slots, as read together by the indicator and the panel. */

@@ -9,6 +9,7 @@
  *   src/offscreen/index.ts       -> dist/offscreen.js            (ESM: the recorders' hidden page)
  *   src/note/note.ts             -> dist/note.js                 (ESM: the Alt+T note popup)
  *   src/menu/menu.ts             -> dist/menu.js                 (ESM: the toolbar menu, action popup)
+ *   src/welcome/welcome.ts       -> dist/welcome.js              (ESM: the first-install welcome tab)
  *   src/content/area-select.ts   -> dist/content/area-select.js  (IIFE: injected with
  *   src/content/page-helper.ts   -> dist/content/page-helper.js   executeScript({ files }),
  *   src/content/voice-overlay.ts -> dist/content/voice-overlay.js which runs classic scripts only)
@@ -52,6 +53,7 @@ const STATIC_FILES = [
   ["src/offscreen/offscreen.html", "offscreen.html"],
   ["src/note/note.html", "note.html"],
   ["src/menu/menu.html", "menu.html"],
+  ["src/welcome/welcome.html", "welcome.html"],
 ];
 
 async function copyStatic() {
@@ -87,6 +89,7 @@ const moduleBuild = {
     offscreen: "src/offscreen/index.ts",
     note: "src/note/note.ts",
     menu: "src/menu/menu.ts",
+    welcome: "src/welcome/welcome.ts",
   },
   outdir: dist,
   plugins: [copyStaticPlugin],

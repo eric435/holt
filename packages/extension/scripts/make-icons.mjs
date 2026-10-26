@@ -7,6 +7,13 @@
  * white lowercase "h", anti-aliased by 4x4 supersampling, then encode a PNG
  * by hand (signature + IHDR + IDAT (zlib) + IEND, each chunk with a CRC32).
  *
+ * The 128 px icon is the one the Chrome Web Store and chrome://extensions
+ * show large. Google's guidance for it is 96x96 of artwork centred on the
+ * 128x128 canvas, with 16 px of transparent padding on each side, so the
+ * rounded square doesn't look bigger than other extensions' icons. The
+ * 16/32/48 px icons (toolbar, favicon, management page) stay full-bleed:
+ * at those sizes every pixel counts. See PADDING.
+ *
  * Output goes to public/icons and is committed, so a normal build does not
  * need to run this. Re-run with `pnpm --filter @holt/extension icons`.
  */
@@ -18,6 +25,8 @@ import { fileURLToPath } from "node:url";
 
 const outDir = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "public/icons");
 const SIZES = [16, 32, 48, 128];
+/** Transparent padding per side, in px, by icon size (missing = full-bleed). */
+const PADDING = { 128: 16 };
 const BG = [76, 110, 245]; // #4c6ef5
 const FG = [255, 255, 255];
 
@@ -63,8 +72,14 @@ function letterDistance(x, y) {
 
 // ---- raster ------------------------------------------------------------------
 
-function render(size) {
+/**
+ * Rasterise the icon at `size` px. The unit square maps onto the inner
+ * (size - 2 * pad) px; samples in the padding land outside [0,1], where
+ * roundedSquareDistance is positive, so they stay transparent.
+ */
+function render(size, pad = 0) {
   const SS = 4; // supersamples per axis
+  const art = size - 2 * pad;
   const rgba = Buffer.alloc(size * size * 4);
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
@@ -72,8 +87,8 @@ function render(size) {
       let fgCover = 0;
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
-          const x = (px + (sx + 0.5) / SS) / size;
-          const y = (py + (sy + 0.5) / SS) / size;
+          const x = (px - pad + (sx + 0.5) / SS) / art;
+          const y = (py - pad + (sy + 0.5) / SS) / art;
           if (roundedSquareDistance(x, y) <= 0) {
             bgCover++;
             if (letterDistance(x, y) <= 0) fgCover++;
@@ -140,6 +155,6 @@ function encodePng(size, rgba) {
 await mkdir(outDir, { recursive: true });
 for (const size of SIZES) {
   const file = join(outDir, `icon-${size}.png`);
-  await writeFile(file, encodePng(size, render(size)));
+  await writeFile(file, encodePng(size, render(size, PADDING[size] ?? 0)));
   console.log(`wrote ${file}`);
 }

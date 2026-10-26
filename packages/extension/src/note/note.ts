@@ -31,7 +31,8 @@
  *     If the screenshot's session has ended meanwhile (the server refuses
  *     its entry), the worker saves the words as a separate note and says
  *     so; Skip always closes.
- *  3. 🎙 Dictate: speech into the textarea, the same way as the transcript
+ *  3. 🎙 Dictate (only while transcription is on in the settings, see
+ *     Settings.transcribe): speech into the textarea, the same way as the transcript
  *     box on the page (content/voice-overlay.ts): newly recognised words
  *     are appended after the user's text without moving their caret, and
  *     what is being recognised right now is shown greyed out underneath.
@@ -177,7 +178,6 @@ function screenshotMode(id: string): Mode {
   textarea.placeholder = "What's wrong in this screenshot? (optional)";
   showStatus(SCREENSHOT_KEYS_HINT);
   skip.hidden = false;
-  mic.hidden = false;
   const dictation = setUpDictation();
 
   const mine = (p: unknown): p is PendingScreenshot => (p as PendingScreenshot | undefined)?.id === id;
@@ -278,11 +278,14 @@ interface Dictation {
 
 function setUpDictation(): Dictation {
   const available = "webkitSpeechRecognition" in window || "SpeechRecognition" in window;
-  if (!available) {
-    mic.hidden = true;
-    return { stop: async () => undefined, cancel: () => undefined };
-  }
-  interim.hidden = false;
+  if (!available) return { stop: async () => undefined, cancel: () => undefined };
+  // The button stays hidden (as in note.html) unless transcription is on in
+  // the settings: dictating is speech recognition, which sends the audio to
+  // Google's speech service, and the user may have turned that off.
+  void loadSettings().then(({ transcribe }) => {
+    mic.hidden = !transcribe;
+    interim.hidden = !transcribe;
+  });
 
   /** The microphone and recogniser while dictating; `transcriber` is null for the instant it is being created. */
   let running: { stream: MediaStream; transcriber: Transcriber | null } | null = null;
@@ -334,7 +337,12 @@ function setUpDictation(): Dictation {
     starting = true;
     mic.disabled = true;
     try {
-      const { microphoneId } = await loadSettings();
+      const { microphoneId, transcribe } = await loadSettings();
+      if (!transcribe) {
+        // Turned off since this window opened.
+        mic.hidden = true;
+        return;
+      }
       const { stream, fallback } = await openMicrophone(microphoneId);
       heard = "";
       const session: { stream: MediaStream; transcriber: Transcriber | null } = { stream, transcriber: null };

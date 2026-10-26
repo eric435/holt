@@ -1,0 +1,123 @@
+name: Extension release
+
+# Builds the Chrome Web Store zip for the extension, from a commit anyone can
+# inspect, and tags that commit `extension-v<version>`. Manual only: start it
+# from the Actions tab (Run workflow). It never uploads to the Web Store;
+# you download the zip from the run's artifacts and upload it in the
+# developer dashboard. See CONTRIBUTING.md, "Releasing the extension".
+#
+# The extension is versioned independently of the npm package (release.yml,
+# tags `v<version>`): its one version lives in
+# packages/extension/package.json, and build.mjs copies it into the
+# manifest. The Web Store rejects an upload whose version isn't higher than
+# the published one, so this workflow refuses a version that already has an
+# `extension-v<version>` tag, and creates that tag once the zip is built.
+#
+# `dry_run` builds and uploads the artifact without tagging, from any branch,
+# to try the workflow out. A real run (the default) must be on main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build the zip only: don't tag (any branch)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the extension-v<version> tag
+    env:
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        name: Check the version and branch
+        run: |
+          version=$(node -p "require('./packages/extension/package.json').version")
+          tag="extension-v$version"
+          if [ "$DRY_RUN" != "true" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Release from main (this run is on $GITHUB_REF), or tick dry_run."
+            exit 1
+          fi
+          # The checkout is shallow and has no tags; ask the remote. The
+          # package script checks local tags too, which here are none.
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::error::$tag already exists: bump version in packages/extension/package.json."
+            exit 1
+          fi
+          echo "@holt/extension $version, tag $tag, dry_run=$DRY_RUN"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+      # Rebuilds the extension (identical output) and writes
+      # packages/extension/release/holt-extension-<version>.zip.
+      - name: Package
+        run: pnpm --filter @holt/extension package
+      # After Package, so the smoke test loads exactly the dist/ that was
+      # zipped. Same setup as in ci.yml.
+      - name: Extension smoke test
+        run: pnpm --filter @holt/extension smoke
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      # GitHub serves every artifact as a zip, so the download is a zip
+      # holding holt-extension-<version>.zip: unzip once, upload the inner one.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: holt-extension-${{ steps.version.outputs.version }}
+          path: packages/extension/release/holt-extension-${{ steps.version.outputs.version }}.zip
+          if-no-files-found: error
+          compression-level: 0 # already compressed
+      - name: Tag the release
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
+
+      # Publishing through the Chrome Web Store API (optional, not set up).
+      #
+      # The first submission has to be made by hand in the developer
+      # dashboard (listing, privacy answers, permission justifications), and
+      # the API needs OAuth credentials for the publisher account, so this
+      # step is left out. To automate later uploads:
+      #   1. Create OAuth credentials for the Chrome Web Store API in a
+      #      Google Cloud project and get a refresh token for the account
+      #      that owns the item (the chrome-webstore-upload-cli README walks
+      #      through it).
+      #   2. Store EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET and
+      #      CWS_REFRESH_TOKEN as secrets of a GitHub environment that
+      #      requires a reviewer, and add `environment: chrome-web-store` to
+      #      this job.
+      #   3. Uncomment the step below (check the CLI's current flags first).
+      #      Without --auto-publish it uploads a draft; you still press
+      #      "Submit for review" in the dashboard.
+      #
+      # - name: Upload to the Chrome Web Store
+      #   if: ${{ !inputs.dry_run }}
+      #   env:
+      #     EXTENSION_ID: ${{ secrets.EXTENSION_ID }}
+      #     CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      #     CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      #     REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+      #   run: >
+      #     npx --yes chrome-webstore-upload-cli@3 upload
+      #     --source packages/extension/release/holt-extension-${{ steps.version.outputs.version }}.zip

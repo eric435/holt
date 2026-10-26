@@ -151,7 +151,7 @@ describe("toast actions", () => {
 });
 
 describe("recorder messages", () => {
-  const settings = { serverUrl: "http://127.0.0.1:4848", token: "", keepAudio: true, microphoneId: "", microphoneLabel: "" };
+  const settings = { serverUrl: "http://127.0.0.1:4848", token: "", transcribe: true, keepAudio: true, microphoneId: "", microphoneLabel: "" };
   const page = { url: "http://localhost/", title: "App" };
 
   it("offscreen:start-tab needs a stream id, page and full settings", () => {
@@ -160,6 +160,10 @@ describe("recorder messages", () => {
     expect(isOffscreenStartTabRequest({ ...ok, streamId: "" })).toBe(false);
     expect(isOffscreenStartTabRequest({ ...ok, page: { url: "u" } })).toBe(false);
     expect(isOffscreenStartTabRequest({ ...ok, settings: { ...settings, keepAudio: "yes" } })).toBe(false);
+    // The recorder must be told whether it may start a speech recogniser.
+    expect(isOffscreenStartTabRequest({ ...ok, settings: { ...settings, transcribe: false } })).toBe(true);
+    const { transcribe: _omitted, ...withoutTranscribe } = settings;
+    expect(isOffscreenStartTabRequest({ ...ok, settings: withoutTranscribe })).toBe(false);
   });
 
   it("offscreen:start-voice and offscreen:stop", () => {

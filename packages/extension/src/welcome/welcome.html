@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  The welcome page, opened once in a tab when holt is first installed
+  (src/background/index.ts, runtime.onInstalled with reason "install"; not
+  on updates). It says what holt needs to work (the local holt server) and
+  checks whether one answers, lists the shortcuts as Chrome has them, and
+  shows the transcription setting with what it sends to Google.
+  No inline script or handlers (MV3 CSP) and nothing remote (no fonts,
+  images or scripts from the network): the icon is the extension's own, and
+  all behaviour is in welcome.js (src/welcome/welcome.ts). The only link
+  out is the README on GitHub, opened as a normal page.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome to holt</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+    <script type="module" src="welcome.js"></script>
+  </head>
+  <body>
+    <main class="page welcome">
+      <header class="welcome-head">
+        <img src="icons/icon-48.png" width="40" height="40" alt="" />
+        <div>
+          <h1>holt is installed</h1>
+          <p class="muted">Screenshots, tab recordings and voice or typed notes for QA, written as markdown straight into your project's repo.</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2>1. Start the holt server</h2>
+        <p>holt sends every capture to a small server on your own machine, which writes it into your project. Nothing works until one is running. In your project, either run the standalone server (it listens on <code>http://127.0.0.1:4848</code>):</p>
+        <pre><code>npx @velvet-thunder/holt</code></pre>
+        <p>or add the Vite plugin to <code>vite.config.ts</code> (holt then finds the server on your app's pages by itself):</p>
+        <pre><code>import holt from "@velvet-thunder/holt/vite";
+
+export default defineConfig({ plugins: [holt()] });</code></pre>
+        <div id="server-line" class="server-line welcome-server" role="status"></div>
+        <div id="server-detail" class="hint"></div>
+      </section>
+
+      <section class="card">
+        <h2>2. Capture</h2>
+        <p>Pin holt to the toolbar (puzzle-piece menu → pin). Clicking its icon opens holt's menu, whose Settings item opens the settings panel. The shortcuts work without the menu:</p>
+        <dl id="shortcuts" class="shortcuts"></dl>
+        <p class="hint">Change them, or give the unset ones a key, at <a href="#" id="shortcuts-link">chrome://extensions/shortcuts</a>.</p>
+      </section>
+
+      <section id="transcription" class="card">
+        <h2>3. Transcription</h2>
+      </section>
+
+      <p class="hint">More in the <a href="https://github.com/eric435/holt#readme" target="_blank" rel="noopener noreferrer">holt README on GitHub</a>. You can close this tab; holt's menu → Settings has everything shown here.</p>
+    </main>
+  </body>
+</html>

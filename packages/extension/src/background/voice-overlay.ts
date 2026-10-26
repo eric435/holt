@@ -109,7 +109,7 @@ export function registerTranscriptBox(id: string, box: TranscriptBoxState): Prom
   return editBoxes((boxes) => void (boxes[id] = box));
 }
 
-/** Show the (empty: "Listening…") box of recording `id`. Never throws. */
+/** Show the (empty: "Listening…", or "Transcription is off") box of recording `id`. Never throws. */
 export async function showTranscriptBox(id: string): Promise<void> {
   const box = (await getBoxes())[id];
   if (!box) return;
@@ -247,6 +247,7 @@ export async function withVoiceOverlayHidden<T>(tabId: number | undefined, captu
 function updateFor(id: string, box: TranscriptBoxState, final: string, interim: string): VoiceOverlayUpdate {
   const update: VoiceOverlayUpdate = { type: "voice-overlay:update", id, recorder: box.recorder, startedAt: box.startedAt, final, interim };
   if (box.draft) update.draft = box.draft;
+  if (box.untranscribed) update.untranscribed = true;
   return update;
 }
 

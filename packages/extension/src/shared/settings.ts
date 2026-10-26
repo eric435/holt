@@ -1,8 +1,9 @@
 /**
  * User settings: how to find the server (auto-detect from the page, or one
  * fixed URL), the fixed/fallback server URL, the optional shared token,
- * whether voice notes keep their audio file, which microphone to record
- * from, and one UI flag (the shortcut hint was dismissed).
+ * whether speech is transcribed at all, whether voice notes keep their
+ * audio file, which microphone to record from, and one UI flag (the
+ * shortcut hint was dismissed).
  *
  * Storage: everything lives in `chrome.storage.local` (this device only).
  *  - Not `storage.sync`: a server URL synced to another of the user's
@@ -44,9 +45,24 @@ export interface Settings {
   /** Shared secret; empty string means "no token". */
   token: string;
   /**
+   * Transcribe speech live with Chrome's speech recognition
+   * (shared/speech.ts): voice notes, the narration of tab recordings, and
+   * dictation in the note window. In Chrome that recogniser streams the
+   * microphone audio to Google's speech service, which is why it can be
+   * turned off. Off: no recogniser is ever created. Voice notes then keep
+   * their audio file whatever `keepAudio` says (see `keepsVoiceAudio`),
+   * tab recordings don't open the microphone at all (it is only there for
+   * the transcript), and the note window has no dictation button. On by
+   * default (the behaviour before this setting existed).
+   */
+  transcribe: boolean;
+  /**
    * Upload the audio of voice notes, not just the reviewed transcript. Off
    * by default: the words are what goes into notes.md, and the audio is
-   * kept anyway when recognition produced nothing usable.
+   * kept anyway when recognition produced nothing usable, and always while
+   * `transcribe` is off (`keepsVoiceAudio`). The stored value is the user's
+   * choice for when transcription is on; it is not changed by turning
+   * transcription off.
    */
   keepAudio: boolean;
   /**
@@ -67,6 +83,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   serverMode: "auto",
   serverUrl: DEFAULT_SERVER_URL,
   token: "",
+  transcribe: true,
   keepAudio: false,
   microphoneId: "",
   microphoneLabel: "",
@@ -152,10 +169,29 @@ export function normalizeSettings(stored: Partial<Record<keyof Settings, unknown
     serverMode: isServerMode(stored.serverMode) ? stored.serverMode : DEFAULT_SETTINGS.serverMode,
     serverUrl: validated?.ok ? validated.url : DEFAULT_SETTINGS.serverUrl,
     token: typeof stored.token === "string" ? stored.token.trim() : DEFAULT_SETTINGS.token,
+    // Only an explicit `false` turns it off: a missing or junk value (every
+    // install from before this setting) keeps transcribing, as it did.
+    transcribe: stored.transcribe !== false,
     keepAudio: typeof stored.keepAudio === "boolean" ? stored.keepAudio : DEFAULT_SETTINGS.keepAudio,
     ...normalizeMicrophone(stored.microphoneId, stored.microphoneLabel),
     hideShortcutHint: stored.hideShortcutHint === true,
   };
+}
+
+/**
+ * Does a voice note upload its audio file? Yes if the user asked for it
+ * (`keepAudio`), if transcription is off (then the audio is the voice
+ * note: words typed into the box on the page are kept as its note, but
+ * they are not what was said), and whenever there are no words to save
+ * (`note` is the reviewed transcript), or the voice note would be empty.
+ */
+export function keepsVoiceAudio(settings: Pick<Settings, "keepAudio" | "transcribe">, note: string): boolean {
+  return settings.keepAudio || keepAudioForced(settings) || note.trim() === "";
+}
+
+/** The keep-audio setting doesn't apply right now: voice notes keep their audio regardless (the UI shows it checked and disabled). */
+export function keepAudioForced(settings: Pick<Settings, "transcribe">): boolean {
+  return !settings.transcribe;
 }
 
 export function isServerMode(value: unknown): value is ServerMode {
@@ -261,7 +297,7 @@ export async function restrictStorageAccess(): Promise<void> {
 // Storage (thin wrappers over chrome.storage.local)
 // ---------------------------------------------------------------------------
 
-const KEYS = ["serverMode", "serverUrl", "token", "keepAudio", "microphoneId", "microphoneLabel", "hideShortcutHint"] as const;
+const KEYS = ["serverMode", "serverUrl", "token", "transcribe", "keepAudio", "microphoneId", "microphoneLabel", "hideShortcutHint"] as const;
 
 export async function loadSettings(): Promise<Settings> {
   await migrateFromSync();
@@ -281,6 +317,7 @@ export async function saveSettings(update: Partial<Settings>): Promise<Settings>
     patch.serverUrl = v.url;
   }
   if (update.keepAudio !== undefined) patch.keepAudio = update.keepAudio;
+  if (update.transcribe !== undefined) patch.transcribe = update.transcribe;
   if (update.token !== undefined) patch.token = update.token.trim();
   // "" (or junk) selects the system default and clears the label.
   if (update.microphoneId !== undefined) Object.assign(patch, normalizeMicrophone(update.microphoneId, update.microphoneLabel ?? ""));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isOwnExtensionPage } from "./pages.js";
+import { isOwnExtensionPage, opensWelcomeOn } from "./pages.js";
 
 const ID = "abcdefghijklmnopabcdefghijklmnop";
 
@@ -16,5 +16,12 @@ describe("isOwnExtensionPage", () => {
     expect(isOwnExtensionPage(undefined, ID)).toBe(false);
     expect(isOwnExtensionPage("", ID)).toBe(false);
     expect(isOwnExtensionPage(`chrome-extension:///note.html`, "")).toBe(false);
+  });
+});
+
+describe("opensWelcomeOn", () => {
+  it("opens the welcome page on a fresh install only", () => {
+    expect(opensWelcomeOn("install")).toBe(true);
+    for (const reason of ["update", "chrome_update", "shared_module_update", ""]) expect(opensWelcomeOn(reason)).toBe(false);
   });
 });

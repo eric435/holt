@@ -47,15 +47,25 @@ package from the registry).
 ## Checks that run in CI
 
 - `pnpm typecheck`, `pnpm build`, `pnpm test`
-- `npm pack --dry-run` in `packages/server`, so the published file list is
-  visible on every PR. The package must keep **zero runtime dependencies**;
-  if you believe one is needed, say why in the PR.
+- `pnpm --filter @velvet-thunder/holt check-pack` lists what `npm pack`
+  would publish from `packages/server` and fails on any file outside an
+  allow-list (`dist/`, `schema.json`, `README.md`, `LICENSE`,
+  `package.json`), on a missing required file, or on any runtime
+  dependency. The package must keep **zero runtime dependencies**; if you
+  believe one is needed, say why in the PR.
 - `pnpm --filter @holt/extension smoke` loads the built extension in a
   real headless Chrome and fails on any startup error.
 
+The end-to-end test (`pnpm --filter @holt/extension e2e`, real Chrome and a
+real server) is not run in CI; run it locally before a release and after
+changes to the worker, the offscreen document or the protocol. See
+[docs/TESTING.md](docs/TESTING.md).
+
 ## Releasing
 
-Only `packages/server` (`@velvet-thunder/holt`) is published. Releases are
+Two things are released, independently: the server, `packages/server`
+(`@velvet-thunder/holt`), to npm, described here; and the extension to the
+Chrome Web Store, described in the next section. Server releases are
 published by [the Release workflow](.github/workflows/release.yml), never
 from a laptop: the package sets `publishConfig.provenance`, which needs the
 OIDC identity of a CI run, so a local `npm publish` fails.
@@ -80,6 +90,85 @@ exists: a **granular** npm token with read and write permission for the
 the package exists, set up the trusted publisher, delete the secret, revoke
 the token, and set the package's Publishing access to "Require two-factor
 authentication and disallow tokens".
+
+## Releasing the extension
+
+The extension is uploaded to the Chrome Web Store by hand. CI builds and
+checks the zip; a person uploads it in the developer dashboard.
+
+1. **Bump the version** in `packages/extension/package.json`. That is the
+   only place it lives: `build.mjs` writes it into `dist/manifest.json`, and
+   `packages/extension/manifest.json` has no `version` on purpose. Chrome
+   versions are one to four dot-separated integers (no `-beta.1`;
+   `check-manifest` fails on one), and every upload must be higher than the
+   version already in the store. Merge to `main`.
+2. **Build the zip.** In the Actions tab, run
+   [Extension release](.github/workflows/extension-release.yml) on `main`.
+   It fails if the tag `extension-v<version>` already exists, runs
+   typecheck, build, tests, `pnpm --filter @holt/extension package` and the
+   smoke test (on the `dist/` it just zipped), uploads the zip as a run
+   artifact, and tags the commit `extension-v<version>`. Tick `dry_run` to
+   try it from any branch without tagging.
+
+   To build the same zip locally: `pnpm package:extension` (an alias for
+   `pnpm --filter @holt/extension package`) writes
+   `packages/extension/release/holt-extension-<version>.zip`, which is
+   gitignored. It leaves out source maps (and the `sourceMappingURL`
+   comments that point at them), refuses a `0.0.0` version, and refuses a
+   version whose `extension-v<version>` tag exists locally (`git fetch
+   --tags` first). The zip is reproducible: the same `dist/` and Node
+   version give the same bytes, and the script prints its SHA-256. Prefer
+   the workflow's zip for real uploads; if you do upload a local one, tag
+   the commit it was built from yourself.
+3. **Download it** from the workflow run's summary page. GitHub wraps every
+   artifact in a zip, so unzip the download once and keep the inner
+   `holt-extension-<version>.zip`.
+4. **Upload it** in the
+   [developer dashboard](https://chrome.google.com/webstore/devconsole):
+   the item → Package → Upload new package, then check the listing and
+   Submit for review.
+
+**First submission.** Everything the dashboard asks for besides the zip
+(store listing text, single-purpose statement, a justification for each
+permission and host permission, the data-usage answers, screenshots) is in
+[docs/chrome-web-store.md](docs/chrome-web-store.md); the privacy policy
+URL is [PRIVACY.md](PRIVACY.md). Before submitting:
+
+- the publisher account is registered and verified, with 2-step
+  verification on;
+- the zip's `manifest.json` has the version you expect and only the
+  permissions `check-manifest` allows;
+- every permission and host permission in the manifest has a justification
+  from docs/chrome-web-store.md in the Privacy tab, and the data-usage
+  answers and certifications match PRIVACY.md;
+- the listing has its screenshots and its store icon (upload
+  `packages/extension/public/icons/icon-128.png`), and the privacy policy
+  URL opens;
+- visibility is what you intend (Unlisted is a reasonable first step).
+
+**Review.** Expect a wait from a few days to a few weeks for the first
+submission (`tabCapture`, `scripting` and host permissions draw a closer
+look), and usually less for updates. Once approved, Chrome auto-updates
+installed copies within hours. If the review is rejected, the email says
+why: fix it, bump the version (the rejected one already has its tag) and
+run the workflow again.
+
+**Automating uploads later.** The workflow does not talk to the Web Store
+API: the first submission has to go through the dashboard, and the API
+needs OAuth credentials for the publisher account. The end of
+`extension-release.yml` has a commented-out step using
+`chrome-webstore-upload-cli`, with the secrets it needs and how to enable
+it.
+
+**How extension and server versions relate.** They are independent: the
+extension is `packages/extension/package.json` and tags
+`extension-v<version>`; the server is `packages/server/package.json` and
+tags `v<version>`. A server is updated whenever a user updates their npm
+dependency, and the extension whenever the store approves an update, so any
+recent extension can meet any recent server. Until the protocol carries a
+version of its own (planned), keep changes to `packages/shared`
+(`@holt/protocol`) backward compatible in both directions, and release the
+server first when both change.
 
 ## Where things go
 

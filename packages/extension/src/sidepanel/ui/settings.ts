@@ -1,19 +1,24 @@
 /**
  * Settings (collapsible): how to find the server (auto-detect from the page
  * or always one URL), the server URL (the fallback, or the one URL), token,
- * keep-audio toggle (saved with the Save button), the microphone picker
- * (saved as soon as it changes), and the current keyboard shortcuts.
+ * keep-audio toggle (saved with the Save button), the transcription switch
+ * with what it sends to Google (ui/transcription.ts) and the microphone
+ * picker (both saved as soon as they change), and the current keyboard
+ * shortcuts. While transcription is off, keep-audio shows checked and
+ * disabled: voice notes keep their audio then whatever it says, and the
+ * user's own choice is kept for when transcription is back on.
  * Validation lives in shared/settings.ts so it is unit-tested.
  */
 
 import { errorMessage } from "../../shared/messages.js";
-import { DEFAULT_SERVER_URL, saveSettings, validateServerUrl, type ServerMode } from "../../shared/settings.js";
+import { DEFAULT_SERVER_URL, keepAudioForced, saveSettings, validateServerUrl, type ServerMode } from "../../shared/settings.js";
 import { getState, update } from "../store.js";
 import { h, replace } from "./dom.js";
 import { microphonePicker } from "./microphone.js";
 import { openShortcutsPage, shortcutList } from "./shortcuts.js";
 import { refreshStatus } from "./status.js";
 import { toast } from "./toast.js";
+import { transcribeToggle } from "./transcription.js";
 
 export function mountSettings(root: HTMLElement): void {
   const { settings } = getState();
@@ -26,7 +31,29 @@ export function mountSettings(root: HTMLElement): void {
   const urlHint = h("div", { class: "hint" });
   const tokenInput = h("input", { type: "password", value: settings.token, autocomplete: "off", placeholder: "(none)" });
   const keepAudio = h("input", { type: "checkbox", checked: settings.keepAudio });
+  const keepAudioHint = h("div", { class: "hint" });
+  /** The user's keep-audio choice; the checkbox shows "on" instead while transcription is off. */
+  let keepAudioChoice = settings.keepAudio;
+  keepAudio.addEventListener("change", () => (keepAudioChoice = keepAudio.checked));
   const save = h("button", { type: "submit" }, "Save");
+
+  /** Keep audio is forced on while transcription is off (shared/settings.ts keepsVoiceAudio): show that, keep the choice. */
+  const reflectTranscribe = (transcribe: boolean): void => {
+    const forced = keepAudioForced({ transcribe });
+    keepAudio.disabled = forced;
+    keepAudio.checked = forced || keepAudioChoice;
+    keepAudioHint.textContent = forced
+      ? "Always on while transcription is off: without a transcript, the audio is what a voice note saves."
+      : "Off: only your reviewed words are saved. The audio is always kept when nothing was recognised.";
+  };
+  reflectTranscribe(settings.transcribe);
+  const transcribe = transcribeToggle({
+    initial: settings.transcribe,
+    onChange: (next) => {
+      update({ settings: { ...getState().settings, transcribe: next.transcribe } });
+      reflectTranscribe(next.transcribe);
+    },
+  });
 
   const validate = (): boolean => {
     const auto = autoMode.checked;
@@ -57,7 +84,7 @@ export function mountSettings(root: HTMLElement): void {
             serverMode: fixedMode.checked ? "fixed" : "auto",
             serverUrl: urlInput.value,
             token: tokenInput.value,
-            keepAudio: keepAudio.checked,
+            keepAudio: keepAudioChoice,
           });
           urlInput.value = next.serverUrl;
           update({ settings: next, server: { kind: "checking" } });
@@ -79,12 +106,11 @@ export function mountSettings(root: HTMLElement): void {
     urlHint,
     h("label", {}, "Token", tokenInput),
     h("div", { class: "hint" }, "Only if holt.config.json sets a token. Stored on this device only (not synced)."),
+    h("h3", {}, "Speech"),
+    // Saves on its own as soon as it is flipped (not with Save), see ui/transcription.ts.
+    transcribe,
     h("label", { class: "check" }, keepAudio, "Also keep the audio of voice notes"),
-    h(
-      "div",
-      { class: "hint" },
-      "Off: only your reviewed words are saved. The audio is always kept when nothing was recognised.",
-    ),
+    keepAudioHint,
     h("div", { class: "row end" }, save),
   );
 

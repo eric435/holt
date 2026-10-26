@@ -36,7 +36,7 @@ import {
 } from "./messages.js";
 
 const page = { url: "http://localhost/", title: "App" };
-const settings = { serverUrl: "http://127.0.0.1:4848", token: "", keepAudio: false, microphoneId: "", microphoneLabel: "" };
+const settings = { serverUrl: "http://127.0.0.1:4848", token: "", transcribe: true, keepAudio: false, microphoneId: "", microphoneLabel: "" };
 
 interface GuardCase {
   guard: (value: unknown) => boolean;

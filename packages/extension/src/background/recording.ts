@@ -35,7 +35,10 @@
  *
  * Both recorders transcribe the microphone into an editable box on the page
  * (voice-overlay.ts), so only one of them runs at a time: two speech
- * recognisers on one microphone would fight over it.
+ * recognisers on one microphone would fight over it. With transcription
+ * turned off (Settings.transcribe) the box is still shown, for typed notes,
+ * and says that nothing is transcribed; the one-at-a-time rule is kept
+ * anyway, so what can run together doesn't depend on a setting.
  */
 
 import { errorMessage, isTopFrameOfTab, type OffscreenStartResponse, type RecorderKind, type RecorderSettings, type RecorderToggleResponse, type SenderLike } from "../shared/messages.js";
@@ -44,7 +47,7 @@ import { PERMISSIONS_PAGE } from "../shared/pages.js";
 import { resolveServerForTab } from "../shared/server.js";
 import { loadSettings } from "../shared/settings.js";
 import { describeMicrophoneError, microphoneProblem } from "../shared/speech-errors.js";
-import { clearState, getRecordingState, getState, setState } from "../shared/state.js";
+import { clearState, getRecordingState, getState, setState, type TranscriptBoxState } from "../shared/state.js";
 import { friendlyRecordingError } from "./errors.js";
 import { notifyToast } from "./notify.js";
 import { closeOffscreenIfIdle, sendIfOpen, sendToRecorder } from "./offscreen.js";
@@ -100,14 +103,21 @@ async function toggleTab(tab: chrome.tabs.Tab | undefined): Promise<RecorderTogg
     return fail(friendlyRecordingError(error));
   }
 
+  let settings: RecorderSettings;
+  try {
+    // Before the box is registered: it needs to know whether there will be a transcript.
+    settings = await recorderSettings(tab);
+  } catch (error) {
+    return fail(`Could not start the tab recording: ${errorMessage(error)}`);
+  }
   const id = crypto.randomUUID();
   const page = pageContextFromTab(tab);
   const startedAt = Date.now();
   await setState("recordingScreen", { id, startedAt, page, tabId });
-  await registerTranscriptBox(id, { recorder: "tab", tabId, startedAt });
+  await registerTranscriptBox(id, boxFor("tab", tabId, startedAt, settings));
   let response: OffscreenStartResponse;
   try {
-    response = await sendToRecorder({ type: "offscreen:start-tab", id, streamId, page, settings: await recorderSettings(tab) });
+    response = await sendToRecorder({ type: "offscreen:start-tab", id, streamId, page, settings });
   } catch (error) {
     response = { ok: false, error: errorMessage(error) };
   }
@@ -160,7 +170,7 @@ async function toggleVoiceNote(tab: chrome.tabs.Tab | undefined): Promise<Record
   const tabId = tab?.id;
   const page = pageContextFromTab(tab);
   await setState("recordingVoice", { id, startedAt, page, microphoneLabel: settings.microphoneLabel, ...(tabId !== undefined && { tabId }) });
-  if (tabId !== undefined) await registerTranscriptBox(id, { recorder: "voice", tabId, startedAt });
+  if (tabId !== undefined) await registerTranscriptBox(id, boxFor("voice", tabId, startedAt, settings));
   let response: OffscreenStartResponse;
   try {
     response = await sendToRecorder({ type: "offscreen:start-voice", id, page, settings });
@@ -315,8 +325,13 @@ async function clearIfCurrent(slot: "screen" | "voice", id: string): Promise<voi
 async function recorderSettings(tab: chrome.tabs.Tab | undefined): Promise<RecorderSettings> {
   const settings = await loadSettings();
   const { serverUrl } = await resolveServerForTab(tab, settings);
-  const { token, keepAudio, microphoneId, microphoneLabel } = settings;
-  return { serverUrl, token, keepAudio, microphoneId, microphoneLabel };
+  const { token, transcribe, keepAudio, microphoneId, microphoneLabel } = settings;
+  return { serverUrl, token, transcribe, keepAudio, microphoneId, microphoneLabel };
+}
+
+/** The transcript box of a recording about to start; it says so when transcription is off. */
+function boxFor(recorder: RecorderKind, tabId: number, startedAt: number, settings: RecorderSettings): TranscriptBoxState {
+  return settings.transcribe ? { recorder, tabId, startedAt } : { recorder, tabId, startedAt, untranscribed: true };
 }
 
 async function fail(message: string): Promise<RecorderToggleResponse> {

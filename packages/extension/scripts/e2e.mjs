@@ -9,7 +9,8 @@
  *      holt.config.json points outputDir at a temp folder, so nothing is
  *      written into examples/vite-app. `node_modules` in the copy only
  *      contains symlinks to `vite` and `holt`.
- *   3. Load the extension with its default "auto" server mode and a
+ *   3. Load the extension (its welcome tab must open on this first install;
+ *      it is closed again, smoke.mjs checks its content) with its default "auto" server mode and a
  *      fallback URL nothing listens on, so every capture below only works
  *      if the extension finds holt on the example page's own origin.
  *      First a loopback page without holt (a plain node server): the
@@ -55,12 +56,14 @@
  *      with a microphone picked in the panel's Settings, one whose
  *      transcript is edited in the box on the page and saved after review
  *      (its words become the note; with the default settings no audio is
- *      kept), and one that is discarded after review (nothing written).
+ *      kept), one that is discarded after review (nothing written), and
+ *      one with transcription turned off (the box says so, the typed words
+ *      become the note, and the audio is kept although keep-audio is off).
  *      Then a screenshot whose note is dictated in the prompt (the mic
  *      button opens the fake microphone; whatever speech recognition makes
  *      of its beeps, the typed text is saved).
  *   9. Check on disk: one session folder; notes.md has a header and entries
- *      1-14 as list items with the right notes, files and Page links;
+ *      1-15 as list items with the right notes, files and Page links;
  *      the PNGs are valid and
  *      the full-page one is taller than the viewport one; the example's
  *      fixed header appears exactly once in the full-page PNG (pixel
@@ -324,6 +327,16 @@ async function clickMenuItem(cdpX, session, label) {
  * root. Page scripts can't reach a closed shadow root; the DevTools
  * protocol can (DOM.getDocument with pierce). Returns null if there is no box.
  */
+/** The welcome tab the worker opens on first install: wait for it (it must open) and close it. */
+async function closeWelcomeTab(cdpX, extensionId) {
+  const url = `chrome-extension://${extensionId}/welcome.html`;
+  const tab = await waitFor(async () => (await cdpX.send("Target.getTargets")).targetInfos.find((t) => t.type === "page" && t.url === url), {
+    timeoutMs: 5_000,
+    what: "the welcome tab on first install",
+  });
+  await cdpX.send("Target.closeTarget", { targetId: tab.targetId });
+}
+
 async function inTranscriptBox(cdpX, session, fn, ...args) {
   const { root } = await cdpX.send("DOM.getDocument", { depth: -1, pierce: true }, session);
   const find = (node) => (node.localName === "holt-voice-overlay" ? node : (node.children ?? []).reduce((hit, child) => hit ?? find(child), null));
@@ -449,6 +462,9 @@ try {
   const worker = await loadExtension(cdp, DIST, collector, { log });
   require_(worker, "the extension's service worker never started (headless Chrome)");
   log(`extension ${worker.extensionId} loaded (${worker.method})`);
+  // First install: the worker opened the welcome tab (smoke checks what is
+  // on it). Closed, so the tabs below are the test's own.
+  await closeWelcomeTab(cdp, worker.extensionId).catch((e) => check(false, e.message));
 
   // Watch the network from the worker and (later) the panel: which requests
   // were made to /__holt, any CORS preflight, any blocked request.
@@ -649,7 +665,7 @@ try {
   );
   check(panelItem.includes("001-screenshot.png") && panelItem.includes(shotNote), `panel item for the screenshot lacks its file or note: ${JSON.stringify(panelItem)}`);
   check(!(await evaluate(cdp, panel, "!!document.querySelector('#entries input')")), "the panel's entry list still has a note input");
-  log(`1/14 viewport screenshot written with its note (prompt: "${prompt1Info.page}", mic button shown=${prompt1Info.mic})`);
+  log(`1/15 viewport screenshot written with its note (prompt: "${prompt1Info.page}", mic button shown=${prompt1Info.mic})`);
 
   // ---- 2. full-page screenshot ------------------------------------------------
   viewports["Screenshot (full page)"] = await pageViewport();
@@ -672,7 +688,7 @@ try {
   check(headerAfter === "visible|", `the fixed header was not restored after the capture (visibility|inline style = ${headerAfter})`);
   const scrollAfter = await evaluate(cdp, page, "scrollY");
   check(scrollAfter === 0, `full-page capture did not restore the scroll position (scrollY=${scrollAfter})`);
-  log("2/14 full-page screenshot written (from the menu; note skipped with Esc)");
+  log("2/15 full-page screenshot written (from the menu; note skipped with Esc)");
 
   // ---- 3. area screenshot: real overlay, synthetic drag ------------------------
   viewports["Screenshot (area)"] = await pageViewport();
@@ -693,7 +709,7 @@ try {
   await cdp.send("Target.closeTarget", { targetId: prompt3.targetId }); // the user closes the window: same as Skip
   await waitForEntries(3, "entry 3 (area screenshot, prompt window closed)");
   check((await pendingShot()) === null, "pendingScreenshot not cleared after the prompt window was closed");
-  log("3/14 area screenshot written (from the menu; prompt window closed, so no note)");
+  log("3/15 area screenshot written (from the menu; prompt window closed, so no note)");
 
   // ---- 4. a second screenshot while the first one's prompt is open --------------------
   const savedNote = "Saved with the button (e2e).";
@@ -730,7 +746,7 @@ try {
   await evaluate(cdp, prompt5.session, "document.getElementById('save').click()");
   await waitForEntries(5, "entry 5 (screenshot saved with the Save button)");
   await promptGone(cdp, prompt5.targetId).catch((e) => check(false, e.message));
-  log("4-5/14 a screenshot taken while a prompt was open wrote the pending one without a note; the new one saved with the button");
+  log("4-5/15 a screenshot taken while a prompt was open wrote the pending one without a note; the new one saved with the button");
 
   // Helpers for the recorder steps.
   const ev = (expr) => evaluate(cdp, worker.sessionId, expr);
@@ -762,14 +778,14 @@ try {
   const recMenu = await openMenu(cdp, worker.extensionId, pageUrl, collector);
   const recItems = await menuItems(cdp, recMenu);
   check(JSON.stringify(recItems) === JSON.stringify(["Stop recording"]), `menu while recording: ${JSON.stringify(recItems)}`);
-  log(`6/14 tab recording running: badge ${recBadge.text}, tooltip "${recBadge.title}", menu ${JSON.stringify(recItems)}, transcript box shown`);
+  log(`6/15 tab recording running: badge ${recBadge.text}, tooltip "${recBadge.title}", menu ${JSON.stringify(recItems)}, transcript box shown`);
   await sleep(2_000);
   await clickMenuItem(cdp, recMenu, "Stop recording");
   await waitForEntries(6, `entry 6 (tab recording). Panel says: ${await panelToasts()}`);
   check((await badge()).text === "", `badge not cleared after the recording: ${JSON.stringify(await badge())}`);
   check(!(await transcriptBox()), "the (untouched) transcript box is still on the page after the recording was saved");
   await waitFor(async () => !(await offscreenOpen()), { timeoutMs: 8_000, what: "the offscreen document to close when idle" }).catch((e) => check(false, e.message));
-  log("6/14 tab recording written; badge cleared; transcript box gone; offscreen document closed");
+  log("6/15 tab recording written; badge cleared; transcript box gone; offscreen document closed");
 
   // ---- 6. quick note popup (Alt+T) --------------------------------------------------
   const popupNote = "Saved from the Alt+T popup (e2e).";
@@ -796,7 +812,7 @@ try {
   }
   await waitForEntries(7, "entry 7 (note from the popup)");
   await waitFor(async () => (await panelToasts()).includes("Note #7 saved"), { what: "the panel to announce the popup's note" }).catch((e) => check(false, e.message));
-  log(`7/14 popup note written (${popupMode}, textarea focused=${focused === "text"}, "${popupPage}")`);
+  log(`7/15 popup note written (${popupMode}, textarea focused=${focused === "text"}, "${popupPage}")`);
 
   // ---- 7. headless: panel closed --------------------------------------------------------
   await cdp.send("Target.closeTarget", { targetId: panelTarget.targetId });
@@ -817,7 +833,7 @@ try {
     const b = await badge();
     return b.text === "REC" ? b : null;
   }, { timeoutMs: 6_000, what: "the REC badge to come back after the ✓ flash" }).catch((e) => (check(false, e.message), null));
-  log(`8/14 headless screenshot while recording (Skip): badge ${flash?.text} then ${restored?.text}`);
+  log(`8/15 headless screenshot while recording (Skip): badge ${flash?.text} then ${restored?.text}`);
   await command("toggle-recording");
   await waitForEntries(9, "entry 9 (tab recording stopped by command, panel closed)");
   const afterStop = await waitFor(async () => {
@@ -826,7 +842,7 @@ try {
   }, { what: "the badge after the headless recording" });
   await waitFor(async () => (await badge()).text === "", { timeoutMs: 6_000, what: "the badge to clear" }).catch((e) => check(false, e.message));
   check(!/recording/.test((await badge()).title), `tooltip still says recording: ${(await badge()).title}`);
-  log(`9/14 headless tab recording written (badge "${afterStop.text}" then cleared)`);
+  log(`9/15 headless tab recording written (badge "${afterStop.text}" then cleared)`);
 
   // ---- 8. voice notes: a second Chrome with fake media devices -------------------------
   chromeB = await launchChrome({
@@ -838,6 +854,7 @@ try {
   const collectorB = errorCollector(cdpB);
   const workerB = await loadExtension(cdpB, DIST, collectorB, { log });
   require_(workerB, "the extension's service worker never started in the second Chrome");
+  await closeWelcomeTab(cdpB, workerB.extensionId).catch((e) => check(false, e.message));
   const evB = (expr) => evaluate(cdpB, workerB.sessionId, expr);
   // This browser uses the "fixed" mode: no probing, always this URL.
   await evB(`chrome.storage.local.set({ serverMode: "fixed", serverUrl: ${JSON.stringify(origin)} })`);
@@ -890,7 +907,7 @@ try {
   await clickMenuItem(cdpB, voiceMenu, "Stop voice note");
   await waitForEntries(10, `entry 10 (voice note from the menu). Panel says: ${await toastsB()}`);
   await waitFor(async () => !(await boxStateB()), { timeoutMs: 3_000, what: "the untouched transcript box to close" }).catch((e) => check(false, e.message));
-  log(`10/14 voice note from the menu (mic "${micInUse}", badge MIC). Panel says: ${(await toastsB()).replace(/\s*×\s*/g, " | ").trim() || "(nothing)"}`);
+  log(`10/15 voice note from the menu (mic "${micInUse}", badge MIC). Panel says: ${(await toastsB()).replace(/\s*×\s*/g, " | ").trim() || "(nothing)"}`);
 
   // 8b. a microphone that doesn't exist -> default, with a message
   await evB(`chrome.storage.local.set({ microphoneId: "no-such-device", microphoneLabel: "Gone Mic" })`);
@@ -902,7 +919,7 @@ try {
   await sleep(1_500);
   await commandB("toggle-voice");
   await waitForEntries(11, "entry 11 (voice note with a missing microphone)");
-  log("11/14 voice note with a missing microphone fell back to the default and said so");
+  log("11/15 voice note with a missing microphone fell back to the default and said so");
 
   // 8c. pick a real (fake) device in Settings
   const picked = await evaluate(cdpB, panelB, `(async () => {
@@ -923,7 +940,7 @@ try {
   await sleep(1_500);
   await commandB("toggle-voice");
   await waitForEntries(12, "entry 12 (voice note with the picked microphone)");
-  log(`12/14 voice note with the picked microphone ("${used}"); picker offered: ${picked.options?.join(", ")}`);
+  log(`12/15 voice note with the picked microphone ("${used}"); picker offered: ${picked.options?.join(", ")}`);
 
   // 8d. edit the transcript in the box, stop: the box stays for review; Save writes the edited text.
   const editedText = "Edited in the transcript box (e2e).";
@@ -945,7 +962,7 @@ try {
   await boxB("function (label) { [...this.querySelectorAll('button')].find(b => b.textContent === label).click(); }", "Save");
   await waitForEntries(13, `entry 13 (reviewed voice note). Panel says: ${await toastsB()}`);
   await waitFor(async () => !(await boxStateB()), { timeoutMs: 3_000, what: "the transcript box to close after Save" }).catch((e) => check(false, e.message));
-  log(`13/14 voice note edited in the box, reviewed and saved (${JSON.stringify(review?.text)})`);
+  log(`13/15 voice note edited in the box, reviewed and saved (${JSON.stringify(review?.text)})`);
 
   // 8e. same, but Discard: nothing is written.
   await commandB("toggle-voice");
@@ -963,7 +980,28 @@ try {
   check(entryCount(readNotes(outDir)) === 13, "a discarded voice note was written");
   log("discarded voice note: box closed, nothing written");
 
-  // 8f. a screenshot note dictated in the prompt. The fake microphone only
+  // 8f. transcription off (Settings.transcribe): the box says so instead of
+  // "Listening…", what is typed there becomes the note, and the audio is
+  // kept anyway (keepAudio is still off): without a transcript it is what
+  // the voice note is.
+  const offNote = "Typed with transcription off (e2e).";
+  await evB("chrome.storage.local.set({ transcribe: false })");
+  await commandB("toggle-voice");
+  const offPlaceholder = await waitFor(() => boxB("function () { return this.querySelector('textarea')?.placeholder ?? null; }"), {
+    what: "the transcript box with transcription off",
+  }).catch((e) => (check(false, e.message), ""));
+  check(/^Transcription is off/.test(offPlaceholder), `transcript box placeholder with transcription off: ${JSON.stringify(offPlaceholder)}`);
+  await boxB("function () { this.querySelector('textarea').focus(); }");
+  await cdpB.send("Input.insertText", { text: offNote }, pageB);
+  await sleep(1_000);
+  await commandB("toggle-voice");
+  await waitFor(async () => (await boxStateB())?.review, { what: "review with transcription off" }).catch((e) => check(false, e.message));
+  await boxB("function (label) { [...this.querySelectorAll('button')].find(b => b.textContent === label).click(); }", "Save");
+  await waitForEntries(14, `entry 14 (voice note with transcription off). Panel says: ${await toastsB()}`);
+  await evB("chrome.storage.local.set({ transcribe: true })");
+  log(`14/15 voice note with transcription off: box said ${JSON.stringify(offPlaceholder)}; typed note saved`);
+
+  // 8g. a screenshot note dictated in the prompt. The fake microphone only
   // beeps, and headless speech recognition may refuse or hear nothing, so
   // this checks that the mic button opens the microphone (or says why not)
   // without breaking the prompt, and that Save stops it and keeps the typed text.
@@ -988,9 +1026,9 @@ try {
   await sleep(1_000);
   await typeInPrompt(cdpB, promptB.session, dictatedNote);
   await evaluate(cdpB, promptB.session, "document.getElementById('save').click()");
-  await waitForEntries(14, `entry 14 (screenshot with a dictated note). Prompt says: ${(await micStateB().catch(() => ({}))).status}`);
+  await waitForEntries(15, `entry 15 (screenshot with a dictated note). Prompt says: ${(await micStateB().catch(() => ({}))).status}`);
   await promptGone(cdpB, promptB.targetId).catch((e) => check(false, e.message));
-  log(`14/14 screenshot note in the prompt with dictation (mic shown=${micBefore.shown}, pressed=${micDuring.pressed}, status "${micDuring.status}")`);
+  log(`15/15 screenshot note in the prompt with dictation (mic shown=${micBefore.shown}, pressed=${micDuring.pressed}, status "${micDuring.status}")`);
 
   for (const [name, session] of [["worker B", workerB.sessionId], ["side panel B", panelB], ["example page B", pageB], ["note prompt B", promptB.session], ...offscreenSessionsB.map((s) => ["offscreen B", s])]) {
     for (const e of collectorB.get(session)) check(false, `${name}: ${e}`);
@@ -1055,7 +1093,7 @@ try {
   const entries = parseEntries(notes);
   const expected = [
     "Screenshot", "Screenshot (full page)", "Screenshot (area)", "Screenshot", "Screenshot", "Recording", "Note",
-    "Screenshot", "Recording", "Voice note", "Voice note", "Voice note", "Voice note", "Screenshot",
+    "Screenshot", "Recording", "Voice note", "Voice note", "Voice note", "Voice note", "Voice note", "Screenshot",
   ];
   check(entries.length === expected.length, `expected ${expected.length} entries, found ${entries.length}`);
   // The kind each label's file name carries; a plain note has no file.
@@ -1078,7 +1116,9 @@ try {
   check(quoted(6, popupNote), `popup note is not the words of entry 7: ${entries[6]?.block}`);
   check(quoted(12, editedText), `the reviewed words are not the note of entry 13: ${entries[12]?.block}`);
   check(!/Transcript:/.test(notes), "notes.md still has a \"Transcript:\" prefix");
-  check(entries[13]?.block.includes(dictatedNote), `the typed text is not in the dictated screenshot note (entry 14): ${entries[13]?.block}`);
+  check(entries[14]?.block.includes(dictatedNote), `the typed text is not in the dictated screenshot note (entry 15): ${entries[14]?.block}`);
+  check(quoted(13, offNote), `the typed words are not the note of entry 14 (transcription off): ${entries[13]?.block}`);
+  check(entries[13] && /\.webm/.test(entries[13].block), `entry 14 (transcription off) should keep its audio although keepAudio is off: ${entries[13]?.block}`);
   // A voice note with words keeps no audio by default; one with no words keeps it so it isn't empty.
   check(entries[12] && !/\.webm/.test(entries[12].block), `entry 13 should have no audio (keepAudio is off by default): ${entries[12]?.block}`);
   // Recordings and voice notes with audio: the linked file exists and is WebM (EBML magic 1A 45 DF A3).
@@ -1160,7 +1200,7 @@ try {
   check(exit, "Vite did not exit within 10 s of SIGTERM");
   notesAtEnd = readNotes(outDir);
   const lastLine = notesAtEnd.trimEnd().split("\n").at(-1);
-  check(/^_Session ended at \S+ \(14 entries\)\._$/.test(lastLine), `notes.md does not end with the session footer; last line: ${JSON.stringify(lastLine)}`);
+  check(/^_Session ended at \S+ \(15 entries\)\._$/.test(lastLine), `notes.md does not end with the session footer; last line: ${JSON.stringify(lastLine)}`);
   log(`Vite exited (${exit ? `code ${exit.code}, signal ${exit.sig}` : "killed"}); last line: ${lastLine}`);
 } catch (error) {
   failures.push(error instanceof Fatal ? error.message : `${error.stack ?? error}`);

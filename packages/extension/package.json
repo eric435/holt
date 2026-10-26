@@ -9,6 +9,7 @@
     "dev": "node scripts/build.mjs --watch",
     "check-manifest": "node scripts/check-manifest.mjs",
     "icons": "node scripts/make-icons.mjs",
+    "package": "pnpm run build && node scripts/package.mjs",
     "smoke": "node scripts/smoke.mjs",
     "e2e": "node scripts/e2e.mjs",
     "test": "vitest run",

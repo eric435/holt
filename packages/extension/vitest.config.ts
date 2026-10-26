@@ -30,6 +30,7 @@ export default defineConfig({
         "src/shared/{media-recorder,state}.ts",
         "src/sidepanel/{index,store}.ts",
         "src/sidepanel/ui/**",
+        "src/welcome/welcome.ts",
       ],
       reporter: ["text", "json-summary", "html"],
     },

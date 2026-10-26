@@ -164,6 +164,8 @@ export type RecorderKind = "tab" | "voice";
 export interface RecorderSettings {
   serverUrl: string;
   token: string;
+  /** Transcribe the microphone (Settings.transcribe); false: no speech recogniser is started. */
+  transcribe: boolean;
   keepAudio: boolean;
   microphoneId: string;
   microphoneLabel: string;
@@ -350,6 +352,8 @@ export interface VoiceOverlayUpdate {
   error?: string;
   /** The user's edits, kept by the worker, for a box re-created after a navigation. */
   draft?: TranscriptDraft;
+  /** Transcription is off for this recording (Settings.transcribe): the box says so instead of "Listening…". */
+  untranscribed?: true;
 }
 
 /**
@@ -743,6 +747,7 @@ function isRecorderSettings(value: unknown): value is RecorderSettings {
     isRecord(value) &&
     typeof value.serverUrl === "string" &&
     typeof value.token === "string" &&
+    typeof value.transcribe === "boolean" &&
     typeof value.keepAudio === "boolean" &&
     typeof value.microphoneId === "string" &&
     typeof value.microphoneLabel === "string"

@@ -148,3 +148,21 @@ button.menu-item.stop { color: var(--danger); font-weight: 600; }
 .menu-problem[hidden] { display: none; }
 .menu-problem-text { color: var(--text); }
 .menu-problem button { font-size: 12px; padding: 3px 8px; }
+
+/* Settings: the transcription switch (also on permissions.html and welcome.html). */
+.transcribe-setting label.check { align-items: flex-start; }
+.transcribe-setting label.check input { margin-top: 3px; }
+
+/* Full-tab pages: permissions.html and welcome.html. */
+/* Chrome's own stylesheet for extension pages sets body { font-size: 75% }, which beats the 13px on :root; a full tab needs the real size. */
+main.page { max-width: 600px; margin: 32px auto; padding: 0 16px 48px; gap: 12px; font-size: 13px; }
+main.page p { margin: 0 0 8px; }
+main.page .card h2 { margin-bottom: 10px; }
+pre { margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); overflow-x: auto; }
+pre code { word-break: normal; white-space: pre; }
+.welcome-head { display: flex; gap: 12px; align-items: center; padding: 0 4px; }
+.welcome-head h1 { font-size: 20px; margin: 0 0 2px; }
+.welcome-head p { margin: 0; }
+.welcome-server { margin-top: 10px; font-weight: 600; }
+.welcome dl.shortcuts { margin-bottom: 8px; }
+a { color: var(--accent); }

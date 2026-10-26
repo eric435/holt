@@ -10,6 +10,10 @@
  * on without a transcript are in shared/speech-errors.ts). Whatever happens with the transcript, the
  * recording it belongs to continues, so the user never loses what they
  * recorded.
+ *
+ * With transcription turned off in the settings, the recorders use
+ * `noTranscription()` instead: webkitSpeechRecognition is never
+ * constructed, and a tab recording doesn't open the microphone at all.
  */
 
 import { describeMicrophoneError, describeSpeechError } from "../shared/speech-errors.js";
@@ -57,6 +61,15 @@ export function startNarration(microphoneId: string, onTranscript: (update: Tran
       return { text: "", error: "The microphone did not open in time, so there is no transcript." };
     },
   };
+}
+
+/**
+ * Transcription is off (Settings.transcribe): a Transcriber that never
+ * creates a speech recogniser, so no audio goes to the speech service.
+ * There is no error to report: no transcript is what the user chose.
+ */
+export function noTranscription(): Transcriber {
+  return { stop: async () => ({ text: "" }) };
 }
 
 /** Transcribe `track` (or, if the browser won't take it, the default microphone) until stop(). */

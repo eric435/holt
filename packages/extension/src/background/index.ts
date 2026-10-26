@@ -35,6 +35,7 @@ import {
   type MenuRunRequest,
   type Message,
 } from "../shared/messages.js";
+import { WELCOME_PAGE, opensWelcomeOn } from "../shared/pages.js";
 import { migrateFromSync, onSettingsChanged, restrictStorageAccess } from "../shared/settings.js";
 import { onRecordingStateChanged, onStateChanged } from "../shared/state.js";
 import { cancelAreaSelection, finishAreaSelection } from "./actions.js";
@@ -195,6 +196,19 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((erro
 // screenshot with whatever was typed (pending-screenshot.ts ignores other
 // windows). A window event, so it also wakes a stopped worker.
 chrome.windows.onRemoved.addListener((windowId) => void onPromptWindowClosed(windowId));
+
+// First install (from the store, or unpacked into a fresh profile): open the
+// welcome page, which says that holt needs the local server and checks for
+// one, lists the shortcuts and explains the transcription setting. Not on
+// updates or reloads (shared/pages.ts). chrome.tabs.create needs no "tabs"
+// permission (that one only reveals other tabs' URLs and titles), and an
+// extension page of our own needs no host access either.
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (!opensWelcomeOn(reason)) return;
+  chrome.tabs.create({ url: chrome.runtime.getURL(WELCOME_PAGE) }).catch((error: unknown) => {
+    console.warn("[holt] could not open the welcome page", error);
+  });
+});
 
 // The browser was quit with a note prompt open: storage.session is gone,
 // but the pending screenshot's backup in storage.local is not. The worker

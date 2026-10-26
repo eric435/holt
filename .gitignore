@@ -152,6 +152,8 @@ vite.config.ts.timestamp-*
 qa/
 dist/
 .holt/
+# Chrome Web Store zips (pnpm package:extension)
+packages/extension/release/
 
 # macOS Finder metadata
 .DS_Store

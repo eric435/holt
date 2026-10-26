@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SERVER_URL, DEFAULT_SETTINGS, isLoopbackHost, normalizeMicrophone, normalizeSettings, planSyncMigration, validateServerUrl } from "./settings.js";
+import {
+  DEFAULT_SERVER_URL,
+  DEFAULT_SETTINGS,
+  isLoopbackHost,
+  keepAudioForced,
+  keepsVoiceAudio,
+  normalizeMicrophone,
+  normalizeSettings,
+  planSyncMigration,
+  validateServerUrl,
+} from "./settings.js";
 
 describe("validateServerUrl", () => {
   it("accepts the default", () => {
@@ -57,6 +67,7 @@ describe("normalizeSettings", () => {
       serverMode: "auto",
       serverUrl: DEFAULT_SERVER_URL,
       token: "",
+      transcribe: true,
       keepAudio: false,
       microphoneId: "",
       microphoneLabel: "",
@@ -65,7 +76,7 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({})).toEqual(DEFAULT_SETTINGS);
   });
   it("drops invalid stored values", () => {
-    expect(normalizeSettings({ serverMode: "manual", serverUrl: "ftp://x", token: 42, keepAudio: "yes", microphoneId: 7, microphoneLabel: "x", hideShortcutHint: "true" })).toEqual(
+    expect(normalizeSettings({ serverMode: "manual", serverUrl: "ftp://x", token: 42, transcribe: "no", keepAudio: "yes", microphoneId: 7, microphoneLabel: "x", hideShortcutHint: "true" })).toEqual(
       DEFAULT_SETTINGS,
     );
   });
@@ -80,6 +91,7 @@ describe("normalizeSettings", () => {
         serverMode: "fixed",
         serverUrl: "http://localhost:5173/",
         token: " s3cret ",
+        transcribe: false,
         keepAudio: true,
         microphoneId: "abc123",
         microphoneLabel: " USB Mic ",
@@ -89,11 +101,46 @@ describe("normalizeSettings", () => {
       serverMode: "fixed",
       serverUrl: "http://localhost:5173",
       token: "s3cret",
+      transcribe: false,
       keepAudio: true,
       microphoneId: "abc123",
       microphoneLabel: "USB Mic",
       hideShortcutHint: true,
     });
+  });
+});
+
+describe("transcribe", () => {
+  it("is on unless explicitly turned off (installs from before the setting keep transcribing)", () => {
+    expect(normalizeSettings({}).transcribe).toBe(true);
+    expect(normalizeSettings({ transcribe: true }).transcribe).toBe(true);
+    expect(normalizeSettings({ transcribe: false }).transcribe).toBe(false);
+    for (const junk of [0, "", "false", null]) expect(normalizeSettings({ transcribe: junk }).transcribe).toBe(true);
+  });
+  it("is not one of the legacy sync keys", () => {
+    expect(planSyncMigration({ transcribe: false }, {})).toEqual({ toLocal: {}, removeFromSync: [] });
+  });
+});
+
+describe("keepsVoiceAudio", () => {
+  const on = { transcribe: true, keepAudio: false };
+  it("drops the audio by default when there are words", () => {
+    expect(keepsVoiceAudio(on, "the button is misaligned")).toBe(false);
+  });
+  it("keeps it when asked to", () => {
+    expect(keepsVoiceAudio({ ...on, keepAudio: true }, "words")).toBe(true);
+  });
+  it("keeps it when nothing usable was recognised, or the words were all deleted", () => {
+    expect(keepsVoiceAudio(on, "")).toBe(true);
+    expect(keepsVoiceAudio(on, "  \n ")).toBe(true);
+  });
+  it("always keeps it while transcription is off, even with words typed into the box", () => {
+    expect(keepsVoiceAudio({ transcribe: false, keepAudio: false }, "")).toBe(true);
+    expect(keepsVoiceAudio({ transcribe: false, keepAudio: false }, "typed by hand")).toBe(true);
+  });
+  it("keepAudioForced says when the setting doesn't apply", () => {
+    expect(keepAudioForced({ transcribe: false })).toBe(true);
+    expect(keepAudioForced({ transcribe: true })).toBe(false);
   });
 });
 

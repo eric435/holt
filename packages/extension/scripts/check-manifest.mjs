@@ -2,7 +2,10 @@
 /**
  * Sanity-check dist/ after a build:
  *  - every file the manifest references exists;
- *  - files referenced from the HTML pages exist;
+ *  - files referenced from the HTML pages exist (welcome.html too, which no
+ *    manifest key names), and nothing a page loads is remote (no scripts,
+ *    stylesheets, fonts or images from the network: the Web Store forbids
+ *    remotely hosted code);
  *  - the on-demand content scripts (injected via executeScript, so NOT in
  *    the manifest) were emitted, and are classic scripts (no import/export);
  *  - permissions are exactly the minimal set we intend to ship;
@@ -48,7 +51,8 @@ check(manifest.background?.type === "module", "background.type must be 'module' 
 check(/^\d+(\.\d+){0,3}$/.test(manifest.version), `invalid version: ${manifest.version}`);
 
 // 2. Files referenced from HTML pages (script src / link href / img src).
-for (const page of ["sidepanel.html", "permissions.html", "offscreen.html", "note.html", "menu.html"]) {
+// welcome.html is not in the manifest: the worker opens it on first install (runtime.onInstalled).
+for (const page of ["sidepanel.html", "permissions.html", "offscreen.html", "note.html", "menu.html", "welcome.html"]) {
   check(exists(page), `missing ${page}`);
   if (!exists(page)) continue;
   const html = readFileSync(join(dist, page), "utf8").replace(/<!--[\s\S]*?-->/g, ""); // ignore comments
@@ -56,7 +60,16 @@ for (const page of ["sidepanel.html", "permissions.html", "offscreen.html", "not
     check(exists(ref), `${page} references missing file: ${ref}`);
   }
   check(!/<script(?![^>]*\bsrc=)[^>]*>/.test(html), `${page} has an inline <script>, which MV3's CSP blocks`);
+  // Nothing remote: the Web Store forbids remotely hosted code, and fonts or
+  // images from the network would leak that holt is in use. Links (<a href>)
+  // to web pages are fine; anything the page itself loads must be local.
+  for (const [, tag, ref] of html.matchAll(/<(script|link|img|iframe|source|video|audio)\b[^>]*\b(?:src|href)="([^"]*)"/g)) {
+    check(!/^(?:[a-z]+:)?\/\//i.test(ref), `${page} loads a remote resource in <${tag}>: ${ref}`);
+  }
+  check(!/@import|url\(\s*["']?(?:https?:)?\/\//i.test(html), `${page} pulls in a remote stylesheet or font`);
 }
+// The one stylesheet every page shares: no web fonts or images from the network either.
+check(!/@import|url\(\s*["']?(?:https?:)?\/\//i.test(readFileSync(join(dist, "sidepanel.css"), "utf8")), "sidepanel.css pulls in a remote stylesheet, font or image");
 
 // 3. Injected content scripts.
 for (const file of ["content/area-select.js", "content/page-helper.js", "content/voice-overlay.js"]) {
