@@ -27,7 +27,7 @@
       "type": "string",
       "minLength": 1,
       "default": "127.0.0.1",
-      "description": "Interface the standalone server binds to. Keep this on loopback: the server writes files to disk. A non-loopback host requires a token, and the server refuses to start without one."
+      "description": "Interface the standalone server binds to. Keep this on loopback: the server writes files to disk. A non-loopback host requires a token, and the server refuses to start without one. Ignored by the Vite plugin."
     },
     "token": {
       "type": [
@@ -36,7 +36,7 @@
       ],
       "minLength": 1,
       "default": null,
-      "description": "Optional shared secret. When set, the extension must send it in the x-holt-token header. Enter the same value in the extension settings. Required for any request from another machine."
+      "description": "Optional shared secret. When set, the extension must send it in the x-holt-token header. Enter the same value in the extension settings. Required for any request from another machine. Prefer the HOLT_TOKEN environment variable over this key: this file is usually committed. HOLT_TOKEN wins over this key."
     },
     "maxUploadBytes": {
       "type": "integer",

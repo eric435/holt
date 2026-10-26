@@ -2,10 +2,13 @@
  * `holt init`: write a starter holt.config.json.
  *
  * Every key is written out with its default value, so the file doubles as
- * documentation (except `projectName`, whose default is derived from
- * package.json, and `allowedExtensionIds`, which differs per install), and
- * `$schema` points at the schema shipped in the package for editor
- * autocomplete and hover docs.
+ * documentation, and `$schema` points at the schema shipped in the package
+ * for editor autocomplete and hover docs. The exceptions: `projectName`,
+ * whose default is derived from package.json; `allowedExtensionIds`, which
+ * differs per install; and `token`. This file is meant to be committed, and
+ * a `"token": null` placeholder invites filling in a secret right there.
+ * Tokens belong in the HOLT_TOKEN environment variable instead (which the
+ * CLI's init message points out).
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -17,7 +20,6 @@ export const STARTER_CONFIG = {
   outputDir: DEFAULTS.outputDir,
   port: DEFAULTS.port,
   host: DEFAULTS.host,
-  token: DEFAULTS.token,
   maxUploadBytes: DEFAULTS.maxUploadBytes,
   sessionTitle: DEFAULTS.sessionTitle,
   allowedOrigins: [],

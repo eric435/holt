@@ -4,6 +4,7 @@ import path from "node:path";
 import { DEFAULT_MAX_UPLOAD_BYTES, DEFAULT_PORT } from "@holt/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "./load.js";
+import type { HoltConfig } from "./types.js";
 import { ConfigError } from "./validate.js";
 
 let dir: string;
@@ -53,6 +54,39 @@ describe("loadConfig", () => {
     expect(config.outputDir).toBe(path.join(dir, "from-cli"));
     expect(config.sessionTitle).toBe("File title");
     expect(config.maxUploadBytes).toBe(DEFAULT_MAX_UPLOAD_BYTES);
+  });
+
+  describe("HOLT_TOKEN", () => {
+    it("supplies the token when nothing else does", async () => {
+      const { config } = await loadConfig(dir, {}, { env: { HOLT_TOKEN: "from-env" } });
+      expect(config.token).toBe("from-env");
+    });
+
+    it("beats the config file and loses to overrides (CLI flags, plugin options)", async () => {
+      await writeConfig({ token: "from-file" });
+      const env = { HOLT_TOKEN: "from-env" };
+      expect((await loadConfig(dir, {}, { env })).config.token).toBe("from-env");
+      expect((await loadConfig(dir, { token: "from-flag" }, { env })).config.token).toBe("from-flag");
+      // An explicit null override is "no token", even with HOLT_TOKEN set.
+      expect((await loadConfig(dir, { token: null }, { env })).config.token).toBeNull();
+      // An undefined override (plain-JS plugin options can pass one) is "not set".
+      const unset = { token: undefined } as unknown as HoltConfig;
+      expect((await loadConfig(dir, unset, { env })).config.token).toBe("from-env");
+    });
+
+    it("treats an empty or missing HOLT_TOKEN as unset", async () => {
+      await writeConfig({ token: "from-file" });
+      expect((await loadConfig(dir, {}, { env: { HOLT_TOKEN: "" } })).config.token).toBe("from-file");
+      expect((await loadConfig(dir, {}, { env: {} })).config.token).toBe("from-file");
+      await rm(path.join(dir, "holt.config.json"));
+      expect((await loadConfig(dir, {}, { env: { HOLT_TOKEN: "" } })).config.token).toBeNull();
+    });
+
+    it("ignores other variables and does not mention the token in warnings", async () => {
+      const { config, warnings } = await loadConfig(dir, {}, { env: { HOLT_PORT: "1", HOLT_TOKEN: "s3cret" } });
+      expect(config.port).toBe(DEFAULT_PORT);
+      expect(warnings.join("\n")).not.toContain("s3cret");
+    });
   });
 
   it("reads allowedExtensionIds", async () => {

@@ -32,13 +32,18 @@ Options:
                    name the extension shows for this project (default: the
                    "name" in ./package.json, else the directory name)
   --config <file>  config file to use (default ./holt.config.json if present)
-  --token <secret> require this token from the extension. Prefer the config
-                   file: command-line arguments are visible to other local
-                   processes and end up in shell history.
+  --token <secret> require this token from the extension. Prefer the
+                   HOLT_TOKEN environment variable: command-line arguments
+                   are visible to other local processes and end up in shell
+                   history, and holt.config.json is usually committed.
   -h, --help       show this help
   -v, --version    print the version
 
-Flags override holt.config.json, which overrides the defaults.
+Environment:
+  HOLT_TOKEN       the token, if you need one (see --token)
+
+Flags override HOLT_TOKEN, which overrides holt.config.json, which overrides
+the defaults.
 Docs: https://www.npmjs.com/package/@velvet-thunder/holt`;
 
 export function parseCliArgs(argv: string[]): CliCommand {

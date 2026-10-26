@@ -38,6 +38,9 @@ async function main(argv: string[]): Promise<void> {
       const file = await writeStarterConfig(process.cwd(), cmd.force);
       logger.info(`Wrote ${file}`);
       logger.info("Next: run `npx holt` (or add the Vite plugin) and connect the extension.");
+      logger.info(
+        "This file is meant to be committed, so keep secrets out of it: if you need a token, set HOLT_TOKEN in your environment.",
+      );
       return;
     }
     case "serve": {

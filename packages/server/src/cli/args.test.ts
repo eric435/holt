@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { validateConfig } from "../config/validate.js";
-import { CliUsageError, parseCliArgs } from "./args.js";
+import { CliUsageError, HELP_TEXT, parseCliArgs } from "./args.js";
 import { STARTER_CONFIG, writeStarterConfig } from "./init.js";
 
 describe("parseCliArgs", () => {
@@ -43,6 +43,12 @@ describe("parseCliArgs", () => {
   });
 });
 
+describe("HELP_TEXT", () => {
+  it("points tokens at HOLT_TOKEN", () => {
+    expect(HELP_TEXT).toMatch(/HOLT_TOKEN/);
+  });
+});
+
 describe("writeStarterConfig", () => {
   it("writes a valid config with $schema, and refuses to overwrite without force", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "holt-init-"));
@@ -51,6 +57,8 @@ describe("writeStarterConfig", () => {
       const written = JSON.parse(await readFile(file, "utf8")) as unknown;
       expect(written).toEqual(STARTER_CONFIG);
       expect(validateConfig(written, file).warnings).toEqual([]);
+      // The file is meant to be committed: no token placeholder (HOLT_TOKEN instead).
+      expect(written).not.toHaveProperty("token");
 
       await expect(writeStarterConfig(dir, false)).rejects.toThrow(/already exists/);
       await writeFile(file, "{}");

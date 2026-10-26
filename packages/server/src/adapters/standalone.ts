@@ -44,8 +44,8 @@ export async function startStandalone(holt: Holt, options: StandaloneOptions = {
   if (!isLoopbackHostname(config.host) && config.token === null) {
     throw new Error(
       `Refusing to listen on "${config.host}" without a token: other machines on your network could ` +
-        `write into ${config.outputDir}. Set "token" in holt.config.json (or pass --token), ` +
-        `or use the default host 127.0.0.1.`,
+        `write into ${config.outputDir}. Set a token in the HOLT_TOKEN environment variable (or pass ` +
+        `--token), or use the default host 127.0.0.1.`,
     );
   }
 

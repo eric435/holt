@@ -14,9 +14,13 @@ export interface HoltConfig {
   outputDir?: string;
   /** Port for the standalone server. Ignored by the Vite plugin. */
   port?: number;
-  /** Interface the standalone server binds to. Keep it on loopback. */
+  /** Interface the standalone server binds to. Keep it on loopback. Ignored by the Vite plugin. */
   host?: string;
-  /** Optional shared secret the extension must send in `x-holt-token`. */
+  /**
+   * Optional shared secret the extension must send in `x-holt-token`.
+   * Also read from the HOLT_TOKEN environment variable, which is the better
+   * place for it than a committed holt.config.json (config/load.ts).
+   */
   token?: string | null;
   /** Upper limit for a single media upload, in bytes. */
   maxUploadBytes?: number;

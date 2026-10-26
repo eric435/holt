@@ -562,7 +562,7 @@ describe("requests from other machines", () => {
   it("refuses to start the standalone server on a non-loopback host without a token", async () => {
     const holt = await createInstance({ host: "0.0.0.0" });
     await expect(startStandalone(holt, { logger: silentLogger })).rejects.toThrow(
-      /Refusing to listen on "0\.0\.0\.0" without a token[\s\S]*Set "token"/,
+      /Refusing to listen on "0\.0\.0\.0" without a token[\s\S]*HOLT_TOKEN/,
     );
   });
 

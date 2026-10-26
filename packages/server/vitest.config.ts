@@ -12,6 +12,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // A HOLT_TOKEN in the developer's shell would otherwise reach every
+    // createHolt() under test. Empty counts as unset (config/load.ts).
+    env: { HOLT_TOKEN: "" },
     include: ["src/**/*.test.ts"],
     coverage: {
       provider: "v8",

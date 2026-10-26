@@ -194,22 +194,53 @@ describe("holt() Vite plugin", () => {
     expect((await fetch(`${origin}/src/qa/x.ts`)).status).toBe(418);
   });
 
-  it("warns when Vite listens on a non-loopback address without a token", async () => {
-    const lanServer = Object.assign(new EventEmitter(), {
-      address: () => ({ address: "0.0.0.0", family: "IPv4", port: 5173 }),
-    });
-    const { server, logger } = stubServer(lanServer);
+  it("does not let Vite serve holt.config.json (it may hold the token)", async () => {
+    await writeFile(path.join(root, "holt.config.json"), JSON.stringify({ token: "s3cret" }));
+    const { server, use } = stubServer();
     await configure(holt(), server);
-    lanServer.emit("listening");
-    expect(logger.warn.mock.calls.map((c) => String(c[0])).join("\n")).toMatch(/0\.0\.0\.0, which other machines can reach/);
+    const origin = await serveMiddlewares(use);
+    for (const p of ["/holt.config.json", "/holt.config.json?import", "/holt%2Econfig.json", "/HOLT.config.json", `/@fs${path.join(root, "holt.config.json")}`]) {
+      const res = await fetch(`${origin}${p}`);
+      expect(res.status, p).toBe(404);
+      expect(await res.text(), p).not.toContain("s3cret");
+    }
+    expect((await fetch(`${origin}/holt.config.json.html`)).status).toBe(418);
+  });
 
-    // With a token: no warning.
-    const second = stubServer(
-      Object.assign(new EventEmitter(), { address: () => ({ address: "0.0.0.0", family: "IPv4", port: 5173 }) }),
+  it("guards the default holt.config.json even when it did not exist at startup, and a custom config file", async () => {
+    await writeFile(path.join(root, "custom.json"), "{}");
+    const { server, use } = stubServer();
+    await configure(holt({ configFile: "custom.json" }), server);
+    const origin = await serveMiddlewares(use);
+    expect((await fetch(`${origin}/custom.json`)).status).toBe(404);
+    expect((await fetch(`${origin}/holt.config.json`)).status).toBe(404);
+    expect((await fetch(`${origin}/other.json`)).status).toBe(418);
+  });
+
+  it("warns when Vite listens on a non-loopback address, token or not, and points at the standalone server", async () => {
+    // Under Vite, holt's API is loopback-only (see the Host check in
+    // http/cors.ts), so a token does not make it reachable from the LAN.
+    for (const options of [{}, { token: "tok-123" }]) {
+      const lanServer = Object.assign(new EventEmitter(), {
+        address: () => ({ address: "0.0.0.0", family: "IPv4", port: 5173 }),
+      });
+      const { server, logger } = stubServer(lanServer);
+      await configure(holt(options), server);
+      lanServer.emit("listening");
+      const warnings = logger.warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(warnings).toMatch(/0\.0\.0\.0, which other machines can reach/);
+      expect(warnings).toMatch(/only answers requests from this machine/);
+      expect(warnings).toMatch(/npx holt --host <address> --token <secret>/);
+      expect(warnings).not.toContain("tok-123");
+    }
+
+    // On loopback: no warning.
+    const local = stubServer(
+      Object.assign(new EventEmitter(), { address: () => ({ address: "127.0.0.1", family: "IPv4", port: 5173 }) }),
     );
-    await configure(holt({ token: "secret" }), second.server);
-    second.httpServer?.emit("listening");
-    expect(second.logger.warn).not.toHaveBeenCalled();
+    await configure(holt({ token: "secret" }), local.server);
+    local.httpServer?.emit("listening");
+    expect(local.logger.warn).not.toHaveBeenCalled();
   });
 
   it("rejects invalid options with a clear error", async () => {

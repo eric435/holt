@@ -26,6 +26,8 @@ export interface CreateHoltOptions {
   overrides?: HoltConfig;
   /** Label for errors in `overrides`, e.g. "command line flags". */
   overridesSource?: string;
+  /** Environment to read HOLT_TOKEN from. Default: process.env. */
+  env?: Record<string, string | undefined>;
   logger?: Logger;
 }
 
@@ -60,6 +62,7 @@ export async function createHolt(options: CreateHoltOptions = {}): Promise<Holt>
   const { config, warnings } = await loadConfig(options.cwd ?? process.cwd(), options.overrides, {
     ...(options.configFile !== undefined && { configFile: options.configFile }),
     ...(options.overridesSource !== undefined && { overridesSource: options.overridesSource }),
+    ...(options.env !== undefined && { env: options.env }),
   });
   for (const warning of warnings) logger.warn(warning);
   logAccessPolicy(config, logger);

@@ -1,9 +1,17 @@
 /**
- * Config loading: defaults < holt.config.json < overrides.
+ * Config loading: defaults < holt.config.json < environment < overrides.
  *
  * "Overrides" are whatever the host passes programmatically: CLI flags for
  * the standalone server, plugin options for Vite. They win because they are
  * the most specific thing the user typed.
+ *
+ * The environment supplies one key: `HOLT_TOKEN` sets `token`. The token is
+ * a secret and holt.config.json is usually committed, so the variable is
+ * the recommended home for it; it beats the file so that a token left in
+ * the file can be replaced without editing it. An empty HOLT_TOKEN counts
+ * as unset (`HOLT_TOKEN= npx holt` must not mean "the empty token"). The
+ * environment can be passed in (`env`, default process.env), so tests do
+ * not depend on the shell they run in.
  *
  * Relative paths (outputDir, --config) resolve against the project root
  * (`cwd`), not the config file's folder: the config file normally lives in
@@ -29,7 +37,12 @@ export interface LoadConfigOptions {
   configFile?: string;
   /** Label for override errors, e.g. "command line flags" or "Vite plugin options". */
   overridesSource?: string;
+  /** Environment to read HOLT_TOKEN from. Default: process.env. */
+  env?: Record<string, string | undefined>;
 }
+
+/** Environment variable that supplies `token`. */
+export const TOKEN_ENV_VAR = "HOLT_TOKEN";
 
 export interface LoadedConfig {
   config: ResolvedConfig;
@@ -66,10 +79,13 @@ export async function loadConfig(
     configFile = configPath;
   }
 
+  const envToken = (options.env ?? process.env)[TOKEN_ENV_VAR];
+  const fromEnv: HoltConfig = envToken ? { token: envToken } : {};
+
   const fromOverrides = validateConfig(overrides, options.overridesSource ?? "options");
   warnings.push(...fromOverrides.warnings);
 
-  const merged = { ...DEFAULTS, ...fromFile, ...fromOverrides.config };
+  const merged = { ...DEFAULTS, ...fromFile, ...fromEnv, ...fromOverrides.config };
 
   const { project, warning } = resolveProject({
     root,

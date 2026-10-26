@@ -387,7 +387,6 @@ being recorded, for as long as the recording (and its review) lasts.
   "outputDir": "qa",
   "port": 4848,
   "host": "127.0.0.1",
-  "token": null,
   "maxUploadBytes": 209715200,
   "sessionTitle": "QA session",
   "projectName": "acme-web"
@@ -395,7 +394,10 @@ being recorded, for as long as the recording (and its review) lasts.
 ```
 
 (`projectName` has no fixed default: when it is unset the server uses the
-package.json name or the directory name, as described above.)
+package.json name or the directory name, as described above. `token` can
+be set here too, but this file is usually committed: set it in the
+`HOLT_TOKEN` environment variable instead, which takes precedence over the
+file.)
 
 The config loader validates every key by hand (no schema library at runtime)
 and prints a clear message naming the bad key. The JSON schema file is shipped

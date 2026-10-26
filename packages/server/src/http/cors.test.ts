@@ -135,4 +135,14 @@ describe("checkOriginAndHost", () => {
       /only accepted from this machine/,
     );
   });
+
+  it("refuses a LAN client's real Host header under the default host, even with a token (Vite --host)", () => {
+    // The Vite plugin leaves `host` at its default (Vite owns the socket),
+    // so a machine reaching `vite --host` at 192.168.1.5:5173 sends that
+    // Host and fails step 1 whatever its token. Under Vite, holt's API is
+    // loopback-only; remote use goes through the standalone server.
+    const req = fakeReq({ host: "192.168.1.5:5173", origin: EXT }, "192.168.1.9");
+    expect(() => checkOriginAndHost(req, config("secret"))).toThrow(HttpError);
+    expect(() => checkOriginAndHost(req, config("secret"))).toThrow(/Host header is not a loopback host/);
+  });
 });

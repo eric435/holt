@@ -49,12 +49,18 @@ into, as hostile.
    cap, and a partial file is deleted on abort. At most 50 uploads per
    session may wait for their entry; the next one gets a 429. There is no *total* quota across sessions: a trusted
    client can still fill a disk by making many requests.
-4. **Exposure on the network.** The server binds to `127.0.0.1` by default.
-   The Host and Origin checks only stop browsers; any other program can
-   forge both headers. So the shared `token` is the only real defense
-   against non-browser clients, and the server refuses to bind to a
+4. **Exposure on the network.** The standalone server binds to `127.0.0.1`
+   by default. The Host and Origin checks only stop browsers; any other
+   program can forge both headers. So the shared `token` is the only real
+   defense against non-browser clients, and the server refuses to bind to a
    non-loopback address unless a token is set. Requests from non-loopback
-   sockets are rejected outright when no token is configured.
+   sockets are rejected outright when no token is configured. Keep the
+   token out of `holt.config.json`, which is usually committed: set it in
+   the `HOLT_TOKEN` environment variable instead (`--token` and Vite plugin
+   options win over `HOLT_TOKEN`, which wins over the file; `holt init`
+   does not write a `token` key). Under the Vite plugin the API is
+   loopback-only, token or not; see "Vite plugin mode". To use holt from
+   another machine, run the standalone server with `--host` and a token.
 5. **Supply chain.** The published package has zero runtime dependencies;
    `vite` is an optional peer. CI fails if the packed tarball contains
    anything outside an explicit allow-list, and `publishConfig.provenance`
@@ -77,7 +83,8 @@ into, as hostile.
 
 - **Other users and processes on your machine.** Anything on loopback with
   no `Origin` header is accepted unless a token is set. On a shared machine
-  or a container that shares the host's loopback interface, set a `token`.
+  or a container that shares the host's loopback interface, set a token
+  (in `HOLT_TOKEN`).
 - **Every installed Chrome extension.** Any `chrome-extension://` origin
   passes by default, because extension IDs differ per install and we cannot
   know yours in advance. Set `allowedExtensionIds` to pin writes to yours.
@@ -88,21 +95,34 @@ into, as hostile.
   write access. Prefer not to.
 - **A committed `holt.config.json`.** It can widen `host`,
   `allowedOrigins`, and `allowedExtensionIds`. The server logs each of these
-  loudly at startup so a surprising value is visible.
+  loudly at startup so a surprising value is visible. A `token` written
+  there is readable by everyone with access to the repository; that is why
+  `HOLT_TOKEN` is the recommended place for it.
 
 ## Vite plugin mode
 
 The API is mounted on your Vite dev server, so it is exposed exactly as far
 as Vite is. Two consequences:
 
-- If you run Vite with `--host` (non-loopback) the API is on your LAN. The
-  plugin warns, and the token rule above applies.
+- Under the plugin, holt's API is loopback-only by design. If you run Vite
+  with `--host`, the dev server is on your LAN, but the Host check only
+  accepts loopback names (and the configured `host`, which the plugin does
+  not bind and which defaults to `127.0.0.1`), while a client on another
+  machine sends Vite's LAN address. So it is refused with or without a
+  token. The plugin warns whenever Vite listens on a non-loopback address.
+  For remote use, run the standalone server: `npx holt --host <addr>`
+  with a token.
 - Vite serves your project root statically, which includes the session
-  folder. The plugin returns 404 for any request into `outputDir`, and the
-  peer range (`^5.4.12 || >=6.0.9`) excludes every Vite release that
-  answered CORS requests with `*` (GHSA-vg6x-rcgg-rjx6: before 5.4.12, and
-  6.0.0 to 6.0.8), which would have let any website read captures by
-  guessing the timestamp-based folder names.
+  folder and `holt.config.json`. The plugin returns 404 for any request
+  into `outputDir` and for the config file (the one it loaded, and
+  `<root>/holt.config.json` even if it did not exist at startup), however
+  the path is spelled: percent-encoded, in another letter case, with `..`
+  or backslashes, under `base` or `publicDir`, or through Vite's `/@fs/`
+  and `/@id/` prefixes (including Windows drive paths like
+  `/@fs/C:/...`). The peer range (`^5.4.12 || >=6.0.9`) excludes every
+  Vite release that answered CORS requests with `*` (GHSA-vg6x-rcgg-rjx6:
+  before 5.4.12, and 6.0.0 to 6.0.8), which would have let any website
+  read captures by guessing the timestamp-based folder names.
 
 ## The extension
 
@@ -187,3 +207,13 @@ probed.
 - Renderers of `notes.md`. GitHub, for example, autolinks bare `www.` text.
   Escaping prevents images and HTML; it cannot prevent a renderer from
   being helpful with plain text.
+- Prompt injection. Page titles and URLs are controlled by the page you
+  capture and are written into `notes.md` verbatim (escaped for Markdown
+  only), and the README suggests pointing a coding agent at `notes.md`.
+  Escaping cannot stop text that reads like instructions ("ignore the
+  above and ..."). Treat `notes.md` as untrusted input to an agent, as you
+  would the pages it was captured from.
+- Your local paths. The header of every `notes.md` and the `/status`
+  response (while a session is active) contain absolute paths of the
+  project and session folder, which usually include your OS username.
+  Keep that in mind when sharing session folders.

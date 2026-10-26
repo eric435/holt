@@ -50,8 +50,11 @@ holt init [--force]   write a starter holt.config.json
 holt --help | --version
 ```
 
-Flags override `holt.config.json`, which overrides the defaults. Ctrl+C
-ends the active session cleanly.
+Flags override the environment, which overrides `holt.config.json`, which
+overrides the defaults. The one environment variable is `HOLT_TOKEN`: if you
+need a token, put it there rather than in `holt.config.json` (usually
+committed) or on the command line (visible to other processes, kept in shell
+history). Ctrl+C ends the active session cleanly.
 
 ### Vite plugin
 
@@ -73,12 +76,18 @@ Vite only for assets (Rails, Laravel, Django, ...), the page's origin is not
 Vite's: set the extension's fallback server URL to the dev server's URL
 (e.g. `http://localhost:5173`); the startup banner prints it. The plugin
 does nothing during `vite build`. Options are the same keys as the config file
-(`port` is ignored; Vite owns the port), plus `configFile`.
+(`port` and `host` are ignored; Vite owns the socket), plus `configFile`.
 
-The plugin also stops Vite from serving the output directory: with the
-default `outputDir: "qa"` inside your project, Vite would otherwise serve
-every screenshot and `notes.md` at `/qa/...` to anything that can reach the
-dev server.
+Under the plugin, holt only answers requests from this machine, even when
+you run `vite --host` and set a token (the plugin warns when Vite listens on
+the network). To use holt from another machine, run the standalone server
+with `--host <addr>` and a token.
+
+The plugin also stops Vite from serving the output directory and
+`holt.config.json`: with the default `outputDir: "qa"` inside your project,
+Vite would otherwise serve every screenshot and `notes.md` at `/qa/...`, and
+the config file (with any token in it) at `/holt.config.json`, to anything
+that can reach the dev server.
 
 **Requires Vite 5.4.12+ (5.x) or 6.0.9+** (the `vite` peer dependency range
 is `^5.4.12 || >=6.0.9`). Earlier versions, including 6.0.0 to 6.0.8, answer
@@ -114,7 +123,7 @@ autocomplete.
 {
   "$schema": "./node_modules/@velvet-thunder/holt/schema.json",
   "outputDir": "qa",
-  "token": null
+  "sessionTitle": "QA session"
 }
 ```
 
@@ -122,8 +131,8 @@ autocomplete.
 | --- | --- | --- | --- |
 | `outputDir` | string | `"qa"` | Where session folders go, relative to the project root. |
 | `port` | integer | `4848` | Standalone server port. Ignored by the Vite plugin. |
-| `host` | string | `"127.0.0.1"` | Interface to bind. A non-loopback host requires a `token`. |
-| `token` | string \| null | `null` | Shared secret the extension must send (`x-holt-token`). Required for requests from other machines. |
+| `host` | string | `"127.0.0.1"` | Interface the standalone server binds to. A non-loopback host requires a token. Ignored by the Vite plugin. |
+| `token` | string \| null | `null` | Shared secret the extension must send (`x-holt-token`). Required for requests from other machines. Prefer the `HOLT_TOKEN` environment variable: this file is usually committed. `--token` and plugin options win over `HOLT_TOKEN`, which wins over this key; an empty `HOLT_TOKEN` counts as unset. `holt init` leaves this key out. |
 | `maxUploadBytes` | integer | `209715200` (200 MiB) | Size limit for one screenshot or recording. |
 | `sessionTitle` | string | `"QA session"` | H1 title for new sessions. |
 | `projectName` | string | `name` from `./package.json`, else the directory name | Name the extension shows for this server ("my-app at http://127.0.0.1:4848"), so you can tell several apart. At most 100 characters, no control characters. Parent directories are not searched. |
@@ -176,20 +185,22 @@ The server writes files into your repo on request, so it is locked down by
 default:
 
 - Binds to `127.0.0.1`. Requests from other machines are refused unless a
-  `token` is set, and the standalone server will not even start on a
-  non-loopback `host` without one.
+  token is set, and the standalone server will not even start on a
+  non-loopback `host` without one. Under the Vite plugin, only requests
+  from this machine are answered.
 - Rejects requests whose `Host` is not a loopback name (DNS rebinding).
 - Only `chrome-extension://` origins (optionally pinned with
   `allowedExtensionIds`, plus any you list in `allowedOrigins`) may call it.
   Every request needs an `x-holt-client` header, which forces a CORS
   preflight that web pages fail. Requests with no `Origin` are accepted only
   from non-browser clients (curl) on this machine.
-- Optional shared `token`.
+- Optional shared token, best kept in the `HOLT_TOKEN` environment variable.
 - The server picks every file name; the extension never sends paths. Every
   write is checked to stay inside the session folder.
 - Upload and JSON body size limits; uploads stream to disk; at most 50
   uploads may wait for their entry per session.
-- In Vite mode, the output directory is not served by the dev server.
+- In Vite mode, the dev server does not serve the output directory or
+  `holt.config.json`.
 - Page titles, URLs and notes are escaped before they go into markdown.
 - No runtime dependencies.
 

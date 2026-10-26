@@ -12,11 +12,17 @@
  *  - The middlewares are added directly in configureServer (not in a
  *    returned post-hook), so they run *before* Vite's own middlewares: its
  *    CORS handling must not answer our preflights, and its static file
- *    serving must not serve the session folders (see output-guard.ts).
- *  - `port`/`host` config keys are ignored: Vite owns the socket. Run
- *    Vite on loopback (its default) to keep the API off the network. If
- *    Vite listens on the network without a holt token, we warn; the
- *    handler refuses non-local requests in that case anyway.
+ *    serving must not serve the session folders or holt.config.json
+ *    (see output-guard.ts).
+ *  - `port`/`host` config keys are ignored: Vite owns the socket. Under
+ *    Vite, holt's API is loopback-only by design. The Host check
+ *    (http/cors.ts) accepts loopback names plus `config.host`, which
+ *    nothing binds under Vite and which normally stays at its 127.0.0.1
+ *    default, so a client on another machine, sending Vite's LAN address
+ *    as its Host, is refused with or without a token. When `vite --host`
+ *    puts the dev server on the network we warn and point at the
+ *    standalone server, the supported way to use holt remotely
+ *    (`--host <addr> --token ...`).
  *  - Requires Vite 5.4.12+ or 6.0.9+ (the peer range is
  *    `^5.4.12 || >=6.0.9`): older versions, including 6.0.0-6.0.8, answer
  *    every request with `Access-Control-Allow-Origin: *`
@@ -35,14 +41,15 @@
  *    its own folder and the next capture starts a new one.
  */
 import type { AddressInfo } from "node:net";
+import path from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
-import { BASE_PATH } from "@holt/protocol";
+import { BASE_PATH, CONFIG_FILE_NAME } from "@holt/protocol";
 import { describeProject } from "../config/project.js";
 import type { HoltConfig } from "../config/types.js";
 import { createHolt, type Holt } from "../core.js";
 import { isLoopbackAddress } from "../http/cors.js";
 import { LOG_PREFIX, type Logger } from "../log.js";
-import { requestTouchesOutputDir } from "./output-guard.js";
+import { requestTouchesProtectedPath, type ProtectedPathOptions } from "./output-guard.js";
 
 export interface HoltViteOptions extends Omit<HoltConfig, "port"> {
   /** Path to a config file (relative to the Vite root). Default: holt.config.json if present. */
@@ -70,15 +77,20 @@ export default function holt(options: HoltViteOptions = {}): Plugin {
       });
       instance = current;
 
-      const guard = {
+      // The config file may hold the token. Protect the default location
+      // even when it is missing now: it can be created while Vite runs.
+      const protectedFiles = [path.join(current.config.root, CONFIG_FILE_NAME)];
+      if (current.config.configFile !== null) protectedFiles.push(current.config.configFile);
+      const guard: ProtectedPathOptions = {
         root: server.config.root,
         outputDir: current.config.outputDir,
+        protectedFiles,
         publicDir: server.config.publicDir,
         base: server.config.base,
       };
       server.middlewares.use((req, res, next) => {
-        if (!requestTouchesOutputDir(req.url, guard)) return next();
-        // Same response as any missing file, so the folder's existence is not revealed.
+        if (!requestTouchesProtectedPath(req.url, guard)) return next();
+        // Same response as any missing file, so their existence is not revealed.
         res.statusCode = 404;
         res.end("Not found");
       });
@@ -100,10 +112,11 @@ export default function holt(options: HoltViteOptions = {}): Plugin {
       }
       httpServer.once("listening", () => {
         const address = httpServer.address();
-        if (address && typeof address !== "string" && !isLoopbackAddress(address.address) && current.config.token === null) {
+        if (address && typeof address !== "string" && !isLoopbackAddress(address.address)) {
           logger.warn(
-            `Vite is listening on ${address.address}, which other machines can reach. holt will refuse ` +
-              `their requests because no "token" is set; set one if you need holt from another machine.`,
+            `Vite is listening on ${address.address}, which other machines can reach. Under Vite, holt ` +
+              `only answers requests from this machine (a token does not change that). To use holt from ` +
+              `another machine, run the standalone server instead: npx holt --host <address> --token <secret>.`,
           );
         }
         const origin = originOf(address);
