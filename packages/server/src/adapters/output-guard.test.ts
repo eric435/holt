@@ -9,6 +9,8 @@ const options: ProtectedPathOptions = {
   publicDir: path.join(root, "public"),
   base: "/",
 };
+/** The /@fs URL Vite itself builds for an absolute path: "/@fs/work/app/x" or "/@fs/D:/work/app/x". */
+const fsUrl = (file: string) => path.posix.join("/@fs/", file.replace(/\\/g, "/"));
 const blocked = (url: string, opts: Partial<ProtectedPathOptions> = {}) =>
   requestTouchesProtectedPath(url, { ...options, ...opts });
 
@@ -29,7 +31,7 @@ describe("requestTouchesProtectedPath: output dir", () => {
     "/QA/x.png", // case-insensitive file systems
     "/qa\\x.png",
     "/src\\..\\qa\\x.png",
-    `/@fs${path.join(root, "qa/x.png")}`,
+    fsUrl(path.join(root, "qa/x.png")),
     `/@fs/${path.join(root, "qa/x.png")}`,
     "/@id/qa/x.png",
     "http://localhost:5173/qa/x.png",
@@ -61,7 +63,7 @@ describe("requestTouchesProtectedPath: output dir", () => {
   it("only blocks /@fs paths for an output dir outside the root", () => {
     const outputDir = path.resolve("/elsewhere/qa");
     expect(blocked("/qa/x.png", { outputDir })).toBe(false);
-    expect(blocked(`/@fs${path.join(outputDir, "x.png")}`, { outputDir })).toBe(true);
+    expect(blocked(fsUrl(path.join(outputDir, "x.png")), { outputDir })).toBe(true);
   });
 });
 
@@ -82,7 +84,7 @@ describe("requestTouchesProtectedPath: config file", () => {
     "/src/../holt.config.json",
     "/src%2F..%2Fholt.config.json",
     "/src\\..\\holt.config.json",
-    `/@fs${configFile}`,
+    fsUrl(configFile),
     `/@fs/${configFile}`,
     "/@id/holt.config.json",
     "http://localhost:5173/holt.config.json",
@@ -104,7 +106,7 @@ describe("requestTouchesProtectedPath: config file", () => {
 
   it("protects a config file outside the root through /@fs only", () => {
     const elsewhere = path.resolve("/elsewhere/holt.json");
-    expect(withConfig(`/@fs${elsewhere}`, { protectedFiles: [elsewhere] })).toBe(true);
+    expect(withConfig(fsUrl(elsewhere), { protectedFiles: [elsewhere] })).toBe(true);
     expect(withConfig("/holt.json", { protectedFiles: [elsewhere] })).toBe(false);
   });
 
