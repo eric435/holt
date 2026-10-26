@@ -43,7 +43,7 @@ export function serverLine(check: ServerCheck): ServerLine {
         : { tone: "green", text: `Connected to holt${version} at ${host}` };
     }
     case "needs-token":
-      return { tone: "green", text: `Found holt at ${host}`, detail: "It requires a token (holt.config.json sets one): enter it in holt's menu → Settings." };
+      return { tone: "green", text: `Found holt at ${host}`, detail: "It requires a token (set with HOLT_TOKEN or --token): enter the same one in holt's menu → Settings." };
     case "incompatible":
       return { tone: "red", text: `Found holt at ${host}, but it doesn't work with this version of the extension.`, detail: check.message };
     case "down":

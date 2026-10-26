@@ -36,10 +36,16 @@ The package installs a command named `holt`. Once it is a dev dependency,
 `npx @velvet-thunder/holt`.
 
 ```
-[holt] v0.0.1 serving my-app (from package.json) at http://127.0.0.1:4848/__holt
+[holt] v0.x.y serving my-app (from package.json) at http://127.0.0.1:4848/__holt
 [holt] Writing sessions to /path/to/app/qa
 [holt] Connect: nothing to set up. This is the holt extension's default server URL.
+[holt] Press Ctrl+C to stop; the active session is closed cleanly.
 ```
+
+`v0.x.y` is the installed version. A `Config: <file>` line follows the
+second one when a `holt.config.json` was loaded. On another port or host,
+the `Connect:` line gives the URL to enter in the extension's settings
+instead, and when a token is set, a line says the extension needs it too.
 
 Options:
 
@@ -47,7 +53,7 @@ Options:
 holt [--port <n>] [--host <host>] [--out <dir>] [--project-name <name>]
      [--config <file>] [--token <secret>]
 holt init [--force]   write a starter holt.config.json
-holt --help | --version
+holt help | --help | --version
 ```
 
 Flags override the environment, which overrides `holt.config.json`, which
@@ -118,15 +124,27 @@ drops into any node:http or connect-style middleware chain.
 
 `holt.config.json` in your project root. Every key is optional. Run
 `npx holt init` to create one with the defaults and a `$schema` for editor
-autocomplete.
+autocomplete:
+
+```
+[holt] Wrote /path/to/app/holt.config.json
+[holt] Next: run `npx holt` (or add the Vite plugin) and connect the extension.
+[holt] This file is meant to be committed, so keep secrets out of it: if you need a token, set HOLT_TOKEN in your environment.
+```
 
 ```json
 {
-  "$schema": "./node_modules/@velvet-thunder/holt/schema.json",
+  "$schema": "https://unpkg.com/@velvet-thunder/holt@0.0.2/schema.json",
   "outputDir": "qa",
-  "sessionTitle": "QA session"
+  "port": 4848,
+  "host": "127.0.0.1",
+  "maxUploadBytes": 209715200,
+  "sessionTitle": "QA session",
+  "allowedOrigins": []
 }
 ```
+
+It refuses to overwrite an existing file; `holt init --force` does.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -159,9 +177,10 @@ committed `holt.config.json` too. `holt init` leaves this key out:
 ## Output
 
 Each session is a folder named `YYYY-MM-DD-HHMMSS` (local time) inside
-`outputDir`. A session starts when you press "start" in the extension, or
-automatically with your first capture. Starting a new session ends the
-previous one. `notes.md` is append-only:
+`outputDir`. A session starts with your first capture, or when you click
+**Start new session** in the extension's settings panel. Starting a new
+session ends the previous one. `notes.md` is append-only, one list item per
+capture (your words, the media file, the page):
 
 ```markdown
 # QA session 2026-10-13 07:52
@@ -172,11 +191,13 @@ previous one. `notes.md` is append-only:
 ---
 
 - Submit button overlaps the footer on narrow widths. ![Screenshot 1](./001-screenshot.png) Page: [Checkout – My App](http://localhost:5173/checkout)
+- Here I add two items and the total doesn't update. [Recording 2](./002-recording.webm) (0:42) Page: [Cart – My App](http://localhost:5173/cart)
 - Coupon field accepts whitespace-only input. Page: [Checkout – My App](http://localhost:5173/checkout)
+- The quantity stepper jumps by two when I click fast. Page: [Cart – My App](http://localhost:5173/cart)
 
 ---
 
-_Session ended at 2026-10-13T08:10:00-07:00 (2 entries)._
+_Session ended at 2026-10-13T08:10:00-07:00 (4 entries)._
 ```
 
 When holt creates the output directory, it puts a `.gitignore` in it so
@@ -205,6 +226,14 @@ A capture of a kind this server doesn't know yet (new kinds do not change
 the protocol version) is refused with a 400 that says the extension is
 probably newer than the server and how to update it; the extension shows
 that message.
+
+## Troubleshooting
+
+A busy port, "Update needed", Vite behind another backend, `npx holt`
+running the wrong package and more:
+[docs/TROUBLESHOOTING.md](https://github.com/eric435/holt/blob/main/docs/TROUBLESHOOTING.md).
+Changes between releases are in
+[CHANGELOG.md](https://github.com/eric435/holt/blob/main/CHANGELOG.md).
 
 ## Security
 

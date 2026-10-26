@@ -136,7 +136,7 @@ export function createApi(config: ApiConfig): Api {
       // `forbidden`s (a non-loopback Host, a disallowed Origin) have nothing to do with it.
       const hint =
         body.error.code === "forbidden" && body.error.message.includes(TOKEN_HEADER)
-          ? " Check that the token in Settings matches the server's holt.config.json."
+          ? " Check that the token in Settings matches the server's (HOLT_TOKEN, --token, or holt.config.json)."
           : "";
       throw new ApiError(body.error.code, body.error.message + hint, response.status);
     }

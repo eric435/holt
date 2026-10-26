@@ -7,7 +7,6 @@ import {
   keepsVoiceAudio,
   normalizeMicrophone,
   normalizeSettings,
-  planSyncMigration,
   validateServerUrl,
 } from "./settings.js";
 
@@ -117,9 +116,6 @@ describe("transcribe", () => {
     expect(normalizeSettings({ transcribe: false }).transcribe).toBe(false);
     for (const junk of [0, "", "false", null]) expect(normalizeSettings({ transcribe: junk }).transcribe).toBe(true);
   });
-  it("is not one of the legacy sync keys", () => {
-    expect(planSyncMigration({ transcribe: false }, {})).toEqual({ toLocal: {}, removeFromSync: [] });
-  });
 });
 
 describe("keepsVoiceAudio", () => {
@@ -158,38 +154,5 @@ describe("normalizeMicrophone", () => {
     expect(normalizeMicrophone(42, "x")).toEqual({ microphoneId: "", microphoneLabel: "" });
     expect(normalizeMicrophone("x".repeat(513), "x")).toEqual({ microphoneId: "", microphoneLabel: "" });
     expect(normalizeMicrophone("dev", "y".repeat(500)).microphoneLabel).toHaveLength(200);
-  });
-});
-
-describe("planSyncMigration", () => {
-  it("does nothing when sync is empty", () => {
-    expect(planSyncMigration({}, {})).toEqual({ toLocal: {}, removeFromSync: [] });
-  });
-
-  it("moves a loopback serverUrl and keepAudio to local, then removes them from sync", () => {
-    expect(planSyncMigration({ serverUrl: "http://localhost:5173/", keepAudio: false }, {})).toEqual({
-      toLocal: { serverUrl: "http://localhost:5173", keepAudio: false },
-      removeFromSync: ["serverUrl", "keepAudio"],
-    });
-  });
-
-  it("carries an explicit synced keepAudio: true over, even though the default is now false", () => {
-    expect(planSyncMigration({ keepAudio: true }, {})).toEqual({ toLocal: { keepAudio: true }, removeFromSync: ["keepAudio"] });
-  });
-
-  it("keeps values already set locally", () => {
-    expect(planSyncMigration({ serverUrl: "http://localhost:1", keepAudio: false }, { serverUrl: "http://127.0.0.1:2", keepAudio: true })).toEqual({
-      toLocal: {},
-      removeFromSync: ["serverUrl", "keepAudio"],
-    });
-  });
-
-  it("drops a synced non-loopback or invalid serverUrl instead of trusting it", () => {
-    expect(planSyncMigration({ serverUrl: "http://203.0.113.9:4848" }, {})).toEqual({ toLocal: {}, removeFromSync: ["serverUrl"] });
-    expect(planSyncMigration({ serverUrl: "ftp://x" }, {})).toEqual({ toLocal: {}, removeFromSync: ["serverUrl"] });
-  });
-
-  it("ignores junk types but still cleans them out of sync", () => {
-    expect(planSyncMigration({ serverUrl: 42, keepAudio: "yes" }, {})).toEqual({ toLocal: {}, removeFromSync: ["serverUrl", "keepAudio"] });
   });
 });

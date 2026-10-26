@@ -23,6 +23,7 @@ export const HELP_TEXT = `holt: write screenshots, recordings and QA notes into 
 Usage:
   holt [options]        start the local server for the holt extension
   holt init [--force]   create a starter holt.config.json here
+  holt help             show this help (same as --help)
 
 Options:
   --port <n>       port to listen on (default ${DEFAULT_PORT})
@@ -66,8 +67,7 @@ export function parseCliArgs(argv: string[]): CliCommand {
       },
     });
   } catch (err) {
-    // parseArgs throws TypeErrors with messages like "Unknown option '--prot'".
-    throw new CliUsageError((err as Error).message);
+    throw new CliUsageError(usageMessage(err as Error & { code?: string }));
   }
   const { values, positionals } = parsed;
 
@@ -77,6 +77,8 @@ export function parseCliArgs(argv: string[]): CliCommand {
   const [subcommand, ...rest] = positionals;
   if (rest.length > 0) throw new CliUsageError(`Unexpected argument: ${rest.join(" ")}`);
 
+  // `holt help` is what people type when they don't know the flag spelling.
+  if (subcommand === "help") return { command: "help" };
   if (subcommand === "init") return { command: "init", force: values.force ?? false };
   if (subcommand !== undefined) throw new CliUsageError(`Unknown command: ${subcommand}`);
   if (values.force) throw new CliUsageError("--force only applies to `holt init`");
@@ -94,6 +96,26 @@ export function parseCliArgs(argv: string[]): CliCommand {
     overrides,
     ...(values.config !== undefined && { configFile: values.config }),
   };
+}
+
+/**
+ * parseArgs's own messages, shortened where they are written for a different
+ * audience. Its unknown-option message goes on to explain how to pass a
+ * positional that starts with "-" (place it after "--"), which is advice for
+ * scripts that take file names, not for a CLI whose only positional is
+ * `init`; for someone who mistyped --port it buries the one useful word. The
+ * other parseArgs messages ("Option '--port <value>' argument missing",
+ * "Option '--force' does not take an argument") are already one plain
+ * sentence and pass through. Keyed on the error `code`, which is stable API;
+ * the option name is read from the message, and if Node ever words it
+ * differently we fall back to the first sentence of whatever it says.
+ */
+export function usageMessage(err: Error & { code?: string }): string {
+  if (err.code === "ERR_PARSE_ARGS_UNKNOWN_OPTION") {
+    const name = /^Unknown option '([^']+)'/.exec(err.message)?.[1];
+    if (name !== undefined) return `Unknown option ${name}`;
+  }
+  return err.message.replace(/\. To specify .*$/s, "");
 }
 
 function parsePort(raw: string): number {

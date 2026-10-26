@@ -76,7 +76,8 @@ This loads `dist/` into a fresh Chrome profile. It fails on any worker error
 at startup and checks the registered shortcuts. It checks the welcome tab
 that opens on first install (exactly one; it names the server commands and
 the real shortcut bindings, loads nothing remote, and its transcription
-switch saves), and the side panel: it renders, migrates old settings, and
+switch saves), and the side panel: it renders, uses the settings in
+`storage.local` (nothing is written to `storage.sync`), and
 with transcription off shows "keep the audio" as forced on without
 changing the stored choice. It injects the content scripts into a local
 fixture page, checks that forged messages from a page are refused, and
@@ -160,7 +161,7 @@ process cannot see. Then `log.ts` (the console logger) and
 `adapters/standalone.ts` (the signal handlers, also run by `cli.test.ts`).
 On the extension: `settings.ts` and `shortcuts.ts`, where the uncovered lines
 are the `chrome.storage` / `chrome.commands` wrappers; their pure halves
-(validation, migration planning) are fully covered.
+(validation, normalising) are fully covered.
 
 ## Deliberately not unit-tested
 
@@ -192,7 +193,7 @@ are the `chrome.storage` / `chrome.commands` wrappers; their pure halves
    approach as `pending-screenshot.test.ts`.
 5. **Unit: `saveSettings` / `loadSettings`** against an in-memory
    `chrome.storage.local`: invalid values are refused before anything is
-   written; the sync migration runs once.
+   written, and nothing goes to `storage.sync`.
 6. **Unit: `background/voice-overlay.ts`**, the review handshake: box
    untouched vs edited, a navigation mid-recording (draft restored from
    `transcriptBoxes`), the one-hour commit timeout.

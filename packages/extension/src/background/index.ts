@@ -36,7 +36,7 @@ import {
   type Message,
 } from "../shared/messages.js";
 import { WELCOME_PAGE, opensWelcomeOn } from "../shared/pages.js";
-import { migrateFromSync, onSettingsChanged, restrictStorageAccess } from "../shared/settings.js";
+import { onSettingsChanged, restrictStorageAccess } from "../shared/settings.js";
 import { onRecordingStateChanged, onStateChanged } from "../shared/state.js";
 import { cancelAreaSelection, finishAreaSelection } from "./actions.js";
 import { handleCommand } from "./commands.js";
@@ -49,9 +49,9 @@ import { onTabUpdated, refreshServerInfo } from "./server-info.js";
 import { decide, finishTranscript, relayTranscript, saveDraft } from "./voice-overlay.js";
 
 // Before anything else touches settings: make storage.local/sync readable
-// only by the worker and extension pages (not content scripts), and move
-// legacy settings out of storage.sync. Neither blocks listener registration.
-void restrictStorageAccess().then(migrateFromSync);
+// only by the worker and extension pages (not content scripts). It doesn't
+// block listener registration.
+void restrictStorageAccess();
 
 // ---------------------------------------------------------------------------
 // Listeners: top level, synchronous. Do not move these into an async function.

@@ -1,10 +1,11 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { validateConfig } from "../config/validate.js";
-import { CliUsageError, HELP_TEXT, parseCliArgs } from "./args.js";
-import { STARTER_CONFIG, writeStarterConfig } from "./init.js";
+import { CliUsageError, HELP_TEXT, parseCliArgs, usageMessage } from "./args.js";
+import { SCHEMA_URL, STARTER_CONFIG, writeStarterConfig } from "./init.js";
 
 describe("parseCliArgs", () => {
   it("defaults to serve with no overrides", () => {
@@ -26,13 +27,19 @@ describe("parseCliArgs", () => {
 
   it("parses help, version and init", () => {
     expect(parseCliArgs(["--help"])).toEqual({ command: "help" });
+    expect(parseCliArgs(["help"])).toEqual({ command: "help" });
     expect(parseCliArgs(["-v"])).toEqual({ command: "version" });
     expect(parseCliArgs(["init"])).toEqual({ command: "init", force: false });
     expect(parseCliArgs(["init", "--force"])).toEqual({ command: "init", force: true });
   });
 
   it.each([
-    [["--prot", "1"], /Unknown option/],
+    [["--prot", "1"], /^Unknown option --prot$/],
+    [["-x"], /^Unknown option -x$/],
+    [["-vx"], /^Unknown option -x$/],
+    [["--port"], /^Option '--port <value>' argument missing$/],
+    [["--force=1"], /^Option '--force' does not take an argument$/],
+    [["help", "init"], /Unexpected argument: init/],
     [["--port", "abc"], /--port must be a number/],
     [["serve"], /Unknown command: serve/],
     [["init", "extra"], /Unexpected argument/],
@@ -43,9 +50,41 @@ describe("parseCliArgs", () => {
   });
 });
 
+describe("usageMessage", () => {
+  const err = (code: string | undefined, message: string) => Object.assign(new TypeError(message), code === undefined ? {} : { code });
+
+  it("keeps only the option name from an unknown-option error", () => {
+    expect(
+      usageMessage(
+        err(
+          "ERR_PARSE_ARGS_UNKNOWN_OPTION",
+          `Unknown option '--bogus'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- "--bogus"`,
+        ),
+      ),
+    ).toBe("Unknown option --bogus");
+  });
+
+  it("falls back to the first sentence if Node rewords the message", () => {
+    expect(
+      usageMessage(err("ERR_PARSE_ARGS_UNKNOWN_OPTION", "Option --bogus is not known. To specify a positional, use --")),
+    ).toBe("Option --bogus is not known");
+    expect(usageMessage(err(undefined, "Something else"))).toBe("Something else");
+  });
+});
+
 describe("HELP_TEXT", () => {
   it("points tokens at HOLT_TOKEN", () => {
     expect(HELP_TEXT).toMatch(/HOLT_TOKEN/);
+  });
+});
+
+describe("SCHEMA_URL", () => {
+  it("points at this version's schema.json on unpkg", () => {
+    const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+      version: string;
+    };
+    expect(SCHEMA_URL).toBe(`https://unpkg.com/@velvet-thunder/holt@${version}/schema.json`);
+    expect(STARTER_CONFIG.$schema).toBe(SCHEMA_URL);
   });
 });
 

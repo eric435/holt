@@ -9,8 +9,10 @@
  *  - Not `storage.sync`: a server URL synced to another of the user's
  *    machines could point that machine at an address that means something
  *    else there (or at a stranger's IP), and the token is a secret that
- *    shouldn't be uploaded to the user's Google account. Earlier builds kept
- *    serverUrl/keepAudio in sync; `migrateFromSync` moves them over once.
+ *    shouldn't be uploaded to the user's Google account. (A development
+ *    build kept serverUrl/keepAudio in sync for a few minutes before any
+ *    release; nothing was ever published that wrote there, so there is no
+ *    migration.)
  *  - Who can read it: by default `storage.local` and `storage.sync` are
  *    readable by our content scripts too, i.e. from inside web pages. The
  *    worker restricts both to trusted contexts (worker + extension pages)
@@ -18,7 +20,7 @@
  *    compromised page renderer can't read the token or repoint serverUrl.
  *    Our content scripts never need settings.
  *
- * The validation and migration-planning functions are pure so they can be
+ * The validation and normalising functions are pure so they can be
  * unit-tested.
  */
 
@@ -213,68 +215,15 @@ export function normalizeMicrophone(id: unknown, label: unknown): Pick<Settings,
 }
 
 // ---------------------------------------------------------------------------
-// Migration from storage.sync (pure planning + thin wrapper)
-// ---------------------------------------------------------------------------
-
-/** Keys earlier builds kept in chrome.storage.sync. */
-export const LEGACY_SYNC_KEYS = ["serverUrl", "keepAudio"] as const;
-
-export interface SyncMigrationPlan {
-  /** Values to write to storage.local. */
-  toLocal: Record<string, unknown>;
-  /** Keys to remove from storage.sync (always all legacy keys found there). */
-  removeFromSync: string[];
-}
-
-/**
- * Decide what to move from sync to local. Values already present in local
- * win (the user set them on this device since). A synced serverUrl is only
- * carried over if it is valid and on loopback: a non-loopback URL may have
- * been synced from another machine and point somewhere unexpected here, so
- * it is dropped and the user falls back to the default.
- */
-export function planSyncMigration(
-  synced: Partial<Record<string, unknown>>,
-  local: Partial<Record<string, unknown>>,
-): SyncMigrationPlan {
-  const toLocal: Record<string, unknown> = {};
-  const removeFromSync = LEGACY_SYNC_KEYS.filter((k) => synced[k] !== undefined);
-  if (typeof synced.serverUrl === "string" && local.serverUrl === undefined) {
-    const v = validateServerUrl(synced.serverUrl);
-    if (v.ok && !v.warning) toLocal.serverUrl = v.url;
-  }
-  if (typeof synced.keepAudio === "boolean" && local.keepAudio === undefined) toLocal.keepAudio = synced.keepAudio;
-  return { toLocal, removeFromSync: [...removeFromSync] };
-}
-
-let migration: Promise<void> | undefined;
-
-/** Move legacy settings out of storage.sync, once per context. Never throws. */
-export function migrateFromSync(): Promise<void> {
-  migration ??= (async () => {
-    try {
-      const [synced, local] = await Promise.all([
-        chrome.storage.sync.get([...LEGACY_SYNC_KEYS]),
-        chrome.storage.local.get([...LEGACY_SYNC_KEYS]),
-      ]);
-      const plan = planSyncMigration(synced, local);
-      if (Object.keys(plan.toLocal).length) await chrome.storage.local.set(plan.toLocal);
-      if (plan.removeFromSync.length) await chrome.storage.sync.remove(plan.removeFromSync);
-    } catch (error) {
-      console.warn("[holt] settings migration from storage.sync failed", error);
-    }
-  })();
-  return migration;
-}
-
-// ---------------------------------------------------------------------------
 // Access level (called by the worker at startup)
 // ---------------------------------------------------------------------------
 
 /**
  * Restrict storage.local and storage.sync to trusted contexts (worker and
  * extension pages), so content scripts can't read the token or change the
- * server URL. storage.session is already restricted by default. Failures
+ * server URL. storage.sync is unused, but restricting it costs nothing and
+ * means a future use can't start out readable from web pages.
+ * storage.session is already restricted by default. Failures
  * (an older Chrome without support for an area) are logged, not fatal.
  */
 export async function restrictStorageAccess(): Promise<void> {
@@ -300,7 +249,6 @@ export async function restrictStorageAccess(): Promise<void> {
 const KEYS = ["serverMode", "serverUrl", "token", "transcribe", "keepAudio", "microphoneId", "microphoneLabel", "hideShortcutHint"] as const;
 
 export async function loadSettings(): Promise<Settings> {
-  await migrateFromSync();
   return normalizeSettings(await chrome.storage.local.get([...KEYS]));
 }
 

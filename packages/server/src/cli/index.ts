@@ -20,7 +20,8 @@ async function main(argv: string[]): Promise<void> {
     cmd = parseCliArgs(argv);
   } catch (err) {
     if (err instanceof CliUsageError) {
-      logger.error(`${err.message}\nRun \`holt --help\` for usage.`);
+      // One line, so it reads as a single complaint rather than a log dump.
+      logger.error(`${err.message}. Run \`holt --help\` for usage.`);
       process.exitCode = 2;
       return;
     }

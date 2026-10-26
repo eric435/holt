@@ -30,7 +30,13 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); }
+/* Chrome injects a stylesheet into every extension page with
+   body { font-size: 75% }, which would turn the 13px on :root into 9.75px
+   for everything inside body (and leave the explicit 12px hints larger than
+   the text they annotate). Same selector, later origin, so this wins: body
+   text is the :root size on every page that uses this file (side panel,
+   toolbar menu, note window, welcome and permissions tabs). */
+body { margin: 0; background: var(--bg); color: var(--text); font-size: inherit; }
 main { padding: 8px; display: grid; gap: 8px; padding-bottom: 96px; }
 
 
@@ -154,8 +160,7 @@ button.menu-item.stop { color: var(--danger); font-weight: 600; }
 .transcribe-setting label.check input { margin-top: 3px; }
 
 /* Full-tab pages: permissions.html and welcome.html. */
-/* Chrome's own stylesheet for extension pages sets body { font-size: 75% }, which beats the 13px on :root; a full tab needs the real size. */
-main.page { max-width: 600px; margin: 32px auto; padding: 0 16px 48px; gap: 12px; font-size: 13px; }
+main.page { max-width: 600px; margin: 32px auto; padding: 0 16px 48px; gap: 12px; }
 main.page p { margin: 0 0 8px; }
 main.page .card h2 { margin-bottom: 10px; }
 pre { margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); overflow-x: auto; }

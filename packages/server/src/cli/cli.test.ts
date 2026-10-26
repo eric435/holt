@@ -135,13 +135,18 @@ describe("holt (the bin)", () => {
     expect(stdout).toMatch(/^Usage:\n {2}holt \[options\]/m);
   });
 
-  it("an unknown flag exits 2 with a one-line reason and a pointer to --help, and starts nothing", async () => {
+  it("`holt help` prints the same usage as --help", async () => {
+    const { code, stdout } = await run(["help"]);
+    expect(code).toBe(0);
+    expect(stdout).toBe(`${HELP_TEXT}\n`);
+  });
+
+  it("an unknown flag exits 2 with one line naming it and pointing to --help, and starts nothing", async () => {
     const { code, stdout, stderr } = await run(["--prot", "4848"]);
     expect(code).toBe(2);
     expect(stdout).toBe("");
-    expect(stderr).toMatch(/^\[holt\] error: Unknown option '--prot'/);
-    expect(stderr).toContain("Run `holt --help` for usage.");
-    expect(stderr).not.toMatch(/\n\s+at /); // no stack trace
+    // Exactly one line: none of parseArgs's advice about "--" positionals.
+    expect(stderr).toBe("[holt] error: Unknown option --prot. Run `holt --help` for usage.\n");
   });
 
   it("a bad config value exits 1 with the validator's message, not a stack trace", async () => {

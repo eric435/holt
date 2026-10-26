@@ -16,7 +16,8 @@
  *      forced on while it is off, the stored choice untouched), a voice
  *      note without microphone permission fails fast and offers
  *      permissions.html in the panel, the side panel page renders without
- *      errors and migrates legacy storage.sync settings to storage.local, the on-demand content scripts work on a local fixture page
+ *      errors and uses the server URL in storage.local (storage.sync stays
+ *      empty), the on-demand content scripts work on a local fixture page
  *      (with no holt server anywhere, the badge turns into a red "!" on the
  *      fixture's loopback page, and the toolbar menu says "Not connected";
  *      page-helper metrics/scroll/restore incl. hiding and restoring the
@@ -182,9 +183,9 @@ async function run(headless) {
     }
 
     // ---- 3. side panel page (opened as a tab: same page, same code) ---------
-    // Seed legacy settings in storage.sync (where earlier builds kept them):
-    // the panel must migrate them to storage.local on load.
-    await evaluate(cdp, worker.sessionId, `chrome.storage.sync.set({ serverUrl: "http://localhost:4999", keepAudio: false })`);
+    // A fallback server URL nothing listens on (the later sections rely on
+    // it: "no server for this page", "Not connected"). The panel must show it.
+    await evaluate(cdp, worker.sessionId, `chrome.storage.local.set({ serverUrl: "http://localhost:4999", keepAudio: false })`);
     const panelUrl = `chrome-extension://${worker.extensionId}/sidepanel.html`;
     const { targetId: panelTarget } = await cdp.send("Target.createTarget", { url: "about:blank" });
     const panel = await attach(cdp, panelTarget);
@@ -202,10 +203,11 @@ async function run(headless) {
     const serverLine = await evaluate(cdp, panel, "document.querySelector('.server-line')?.innerText ?? ''");
     log(`side panel rendered; server line: "${serverLine.replace(/\s+/g, " ").slice(0, 120)}"`);
     const stores = await evaluate(cdp, worker.sessionId, `Promise.all([chrome.storage.sync.get(null), chrome.storage.local.get(null)])`);
-    expect(Object.keys(stores[0]).length === 0, `storage.sync still has settings after migration: ${JSON.stringify(stores[0])}`);
-    expect(stores[1].serverUrl === "http://localhost:4999" && stores[1].keepAudio === false, `settings not migrated to storage.local: ${JSON.stringify(stores[1])}`);
-    expect(serverLine.includes("localhost:4999"), "panel is not using the migrated server URL");
-    log(`settings migration: sync -> local ${JSON.stringify(stores[1])}; sync now ${JSON.stringify(stores[0])}`);
+    // Settings live in storage.local only (shared/settings.ts says why).
+    expect(Object.keys(stores[0]).length === 0, `something wrote to storage.sync: ${JSON.stringify(stores[0])}`);
+    expect(stores[1].serverUrl === "http://localhost:4999" && stores[1].keepAudio === false, `seeded settings changed in storage.local: ${JSON.stringify(stores[1])}`);
+    expect(serverLine.includes("localhost:4999"), "panel is not using the stored server URL");
+    log(`settings: local ${JSON.stringify(stores[1])}; sync ${JSON.stringify(stores[0])}`);
 
     // ---- 3a. transcription switch: keep-audio is forced on while it is off ----
     const speech = await evaluate(cdp, panel, `(async () => {
@@ -258,7 +260,7 @@ async function run(headless) {
       await waitFor(() => evaluate(cdp, page, "document.readyState === 'complete' && !!document.querySelector('header')"), { what: "the fixture page to load" });
 
       // No holt anywhere: the fixture's origin answers every path with HTML
-      // (not holt), and the fallback URL (localhost:4999, migrated above) is
+      // (not holt), and the fallback URL (localhost:4999, seeded above) is
       // closed. On a loopback page that is the red "!" badge.
       await cdp.send("Target.activateTarget", { targetId: pageTarget });
       const noServer = await waitFor(

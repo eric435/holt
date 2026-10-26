@@ -35,13 +35,26 @@ happens when an extension and a server from different releases meet is
 packages/
   shared/      @holt/protocol         types + constants, zero runtime code
   server/      @velvet-thunder/holt   the published npm package (CLI, Vite plugin, core)
-  extension/   @holt/extension        the Chrome extension (built with esbuild, loaded unpacked)
+  extension/   @holt/extension        the Chrome extension (built with esbuild; Chrome Web Store zip or unpacked)
 examples/
   vite-app/    a tiny app to try holt against
+scripts/
+  start-server.mjs     `pnpm start:server <dir>`: run the built CLI in another project
 docs/
-  ARCHITECTURE.md  this file
-  SECURITY.md      threat model and the rules the code follows
+  ARCHITECTURE.md      this file
+  SECURITY.md          threat model and the rules the code follows
+  TESTING.md           unit, smoke and end-to-end tests, and what CI runs
+  TROUBLESHOOTING.md   symptoms, causes and fixes for users
+  chrome-web-store.md  the store listing: texts, permission justifications, data-use answers
+.github/workflows/
+  ci.yml                 checks on every push to main and every pull request
+  release.yml            publishes the server to npm when its version changes on main
+  extension-release.yml  builds and tags the extension's store zip (started by hand)
 ```
+
+The root also has README.md, CONTRIBUTING.md (development and releases),
+CHANGELOG.md, SECURITY.md (how to report a vulnerability) and PRIVACY.md
+(the extension's privacy policy).
 
 pnpm workspaces link the packages together. `@holt/protocol` has no build
 step: the other packages import its TypeScript source directly and their own
@@ -107,17 +120,47 @@ framework-agnostic:
 
 ```
 src/
-  config/        load + validate holt.config.json; defaults; JSON schema
-  session/       SessionStore: the one active session; folder + file naming;
-                 MarkdownWriter: appends entries to notes.md
-  http/          createHandler(): a plain (req, res) => Promise<boolean> that
-                 implements the protocol; CORS/origin/token checks; body limits
+  index.ts              public API (`@velvet-thunder/holt`): createHolt(), startStandalone(), types
+  core.ts               createHolt(): wires config, session store and HTTP handler together
+  version.ts            the package version, inlined at build time (`__HOLT_VERSION__`, globals.d.ts)
+  log.ts                the `[holt]` logger interface; Vite routes it through its own logger
+  config/
+    defaults.ts         default for every key, plus the limits that are not configurable
+    load.ts             defaults < holt.config.json < HOLT_TOKEN < flags/plugin options
+    validate.ts         hand-written validation, errors that name the bad key
+    project.ts          the project name: projectName, else package.json's name, else the directory
+    types.ts            HoltConfig (what users write) and ResolvedConfig
+  session/
+    store.ts            SessionStore: the one active session, its folder, notes.md, upload paths
+    markdown.ts         renders notes.md: header, one list item per entry, footer (pure)
+    escape.ts           Markdown escaping for page titles, URLs and notes
+    naming.ts           session folder and media file names (server-generated only)
+  http/
+    handler.ts          createHandler(): (req, res) => Promise<boolean>, mounted under /__holt
+    routes.ts           the five API routes
+    cors.ts             who may call the server: Origin, Host, x-holt-client and token checks
+    body.ts             JSON and upload bodies with hard size limits; uploads stream to the path the store picked
+    entry-input.ts      runtime validation of POST /entries bodies
+    errors.ts           HttpError and JSON response helpers
   adapters/
-    standalone/  createServer(): node:http server on DEFAULT_PORT (used by the CLI)
-    vite/        @velvet-thunder/holt/vite: Vite plugin that mounts the handler on the dev server
-  cli/           `holt` bin: parses args, loads config, starts standalone server
-  index.ts       public API: createHolt(), types
+    standalone.ts       startStandalone(): node:http server on DEFAULT_PORT, banner, signal handling
+    vite.ts             @velvet-thunder/holt/vite: mounts the handler on Vite's dev server
+    output-guard.ts     stops Vite serving the output directory and holt.config.json
+  cli/
+    index.ts            the `holt` bin: holt [options], holt init, --help, --version
+    args.ts             argument parsing (node:util parseArgs) and the help text
+    init.ts             `holt init`: writes a starter holt.config.json
+scripts/
+  check-pack.mjs        fails if `npm pack` would publish anything outside the allow-list
+  pack.mjs              builds the tarball the Release workflow publishes (trimmed package.json)
+  copy-license.mjs      copies the repository's LICENSE into the package before a build
+schema.json             JSON schema for holt.config.json (editor autocomplete only)
 ```
+
+Unit tests sit next to the code they test (`*.test.ts`);
+`http/extension-contract.test.ts` is the contract test described above.
+tsup builds three entry points: `dist/index.js`, `dist/vite.js` and
+`dist/cli.js` (the bin).
 
 Key decisions:
 
@@ -220,7 +263,9 @@ src/
   sidepanel/      the "settings panel", optional: server/session status
                   for the page in front, this session's entries, settings
                   (server mode + URL, token, transcription, keep audio,
-                  microphone).
+                  microphone). ui/transcription.ts is the "Transcribe
+                  speech" switch and its disclosure, also used by the
+                  permissions and welcome pages.
   note/           note.html, the Alt+T quick-note popup, and the note
                   prompt after a screenshot (same page, in a popup window,
                   with Skip and dictation).
@@ -235,7 +280,11 @@ src/
                   server API client, and which server a tab's captures go to
                   (server-resolve.ts, server.ts). The client is shared because Blobs
                   cannot be passed between extension contexts cheaply:
-                  whoever records something uploads it.
+                  whoever records something uploads it. The pure modules
+                  the server's contract test imports live here too:
+                  api.ts, entry-bodies.ts (the POST /entries body for each
+                  kind), media-types.ts (what the recorders upload) and
+                  protocol-compat.ts (the protocol version check).
   permissions/    a plain extension page opened in a tab when the microphone
                   is needed: the offscreen document can never show a
                   permission prompt (it is invisible), a tab can. Also shows
@@ -447,7 +496,7 @@ being recorded, for as long as the recording (and its review) lasts.
 
 ```json
 {
-  "$schema": "./node_modules/@velvet-thunder/holt/schema.json",
+  "$schema": "https://unpkg.com/@velvet-thunder/holt@0.0.2/schema.json",
   "outputDir": "qa",
   "port": 4848,
   "host": "127.0.0.1",

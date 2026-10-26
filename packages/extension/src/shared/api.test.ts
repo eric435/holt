@@ -128,7 +128,7 @@ describe("error mapping", () => {
     await expect(createApi({ serverUrl: SERVER, token: "x" }).status()).rejects.toMatchObject({
       code: "forbidden",
       status: 403,
-      message: `${message} Check that the token in Settings matches the server's holt.config.json.`,
+      message: `${message} Check that the token in Settings matches the server's (HOLT_TOKEN, --token, or holt.config.json).`,
     });
   });
 

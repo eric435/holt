@@ -105,7 +105,7 @@ export function mountSettings(root: HTMLElement): void {
     h("label", {}, urlLabel, urlInput),
     urlHint,
     h("label", {}, "Token", tokenInput),
-    h("div", { class: "hint" }, "Only if holt.config.json sets a token. Stored on this device only (not synced)."),
+    h("div", { class: "hint" }, "Only if the server requires one (HOLT_TOKEN or --token). Stored on this device only (not synced)."),
     h("h3", {}, "Speech"),
     // Saves on its own as soon as it is flipped (not with Save), see ui/transcription.ts.
     transcribe,

@@ -11,6 +11,28 @@ pnpm typecheck
 
 Node 22+ and pnpm 10 (`corepack enable` picks the version from package.json).
 
+## Building the extension from source
+
+Until holt is in the Chrome Web Store, and for working on it, load your own
+build:
+
+1. Build it: `pnpm install`, then `pnpm --filter @holt/extension build`
+   (writes `packages/extension/dist` and checks the manifest).
+2. Open `chrome://extensions` and turn on **Developer mode** (top right).
+3. Click **Load unpacked** and pick `packages/extension/dist`.
+4. Pin the holt icon to the toolbar (puzzle-piece menu → pin). Clicking it
+   opens holt's menu, and it is the recording indicator.
+
+After a rebuild, click the reload arrow on holt's card in
+`chrome://extensions`; the side panel reloads with it. The welcome tab
+opens only when holt is first installed in a profile, not when you reload.
+
+An unpacked build gets its own extension ID (not the store's), which
+matters if you pin `allowedExtensionIds` in a server config (see
+[the server README](packages/server/README.md#configuration)). To update
+it, pull, rebuild and reload. The extension README has the
+[build commands and outputs](packages/extension/README.md#building-from-source).
+
 ## Day-to-day
 
 Two terminals:
@@ -20,9 +42,9 @@ pnpm --filter @holt/extension dev     # rebuilds dist/ on change
 pnpm --filter @holt/example-vite-app dev
 ```
 
-Load `packages/extension/dist` once as an unpacked extension
-(chrome://extensions → Developer mode → Load unpacked). After a rebuild, hit
-the reload icon on the extension card; the side panel reloads with it.
+Load `packages/extension/dist` once as an unpacked extension (see
+[above](#building-the-extension-from-source)). After a rebuild, hit the
+reload icon on the extension card; the side panel reloads with it.
 
 Nothing to configure for the example app: the plugin mounts the API on the
 Vite origin and the extension auto-detects it on that page.
@@ -51,11 +73,12 @@ On every push to `main` and every pull request
 [docs/TESTING.md](docs/TESTING.md#what-ci-runs)):
 
 - `pnpm typecheck`, `pnpm build`, `pnpm test` on Linux with Node 22 and 24.
-- `pnpm --filter @velvet-thunder/holt check-pack` lists what `npm pack`
-  would publish from `packages/server` and fails on any file outside an
-  allow-list (`dist/`, `schema.json`, `README.md`, `LICENSE`,
-  `package.json`), on a missing required file, or on any runtime
-  dependency. The package must keep **zero runtime dependencies**; if you
+- `pnpm --filter @velvet-thunder/holt check-pack` builds the tarball the
+  Release workflow publishes (`scripts/pack.mjs`, which also drops
+  `devDependencies` and `scripts` from the published package.json) and
+  fails on any file outside an allow-list (`dist/`, `schema.json`,
+  `README.md`, `LICENSE`, `package.json`), on a missing required file, on
+  any runtime dependency, or on a `workspace:` specifier. The package must keep **zero runtime dependencies**; if you
   believe one is needed, say why in the PR.
 - The example app (`examples/vite-app`) is typechecked and built.
 - `pnpm --filter @holt/extension smoke` loads the built extension in a
@@ -83,7 +106,9 @@ from a laptop: the package sets `publishConfig.provenance`, which needs the
 OIDC identity of a CI run, so a local `npm publish` fails.
 
 To release, bump `version` in `packages/server/package.json` (and nothing
-else; the server reads its version from there) and merge to `main`. On
+else; the server reads its version from there), move the `Unreleased`
+notes in [CHANGELOG.md](CHANGELOG.md) under a heading for that version, and
+merge to `main`. On
 every push to `main`, the workflow checks whether npm already has that
 version. If not, it runs `pnpm typecheck`, `pnpm build`, `pnpm test` and
 `check-pack`, publishes with provenance, and tags the commit `v<version>`.
@@ -113,7 +138,8 @@ checks the zip; a person uploads it in the developer dashboard.
    `packages/extension/manifest.json` has no `version` on purpose. Chrome
    versions are one to four dot-separated integers (no `-beta.1`;
    `check-manifest` fails on one), and every upload must be higher than the
-   version already in the store. Merge to `main`.
+   version already in the store. Note the extension's changes in
+   [CHANGELOG.md](CHANGELOG.md) too. Merge to `main`.
 2. **Build the zip.** In the Actions tab, run
    [Extension release](.github/workflows/extension-release.yml) on `main`.
    It fails if the tag `extension-v<version>` already exists, runs

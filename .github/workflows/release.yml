@@ -87,10 +87,12 @@ jobs:
       - run: pnpm typecheck && pnpm build && pnpm test
       - name: Check published files
         run: pnpm --filter @velvet-thunder/holt check-pack
-      # pnpm packs (it rewrites `workspace:*` versions in package.json); npm
-      # publishes (it does the trusted-publishing exchange).
+      # pack.mjs builds the tarball, exactly as check-pack just built and
+      # read it, with devDependencies and scripts dropped from its
+      # package.json (which `pnpm pack` can't do); npm publishes it (it does
+      # the trusted-publishing exchange). See packages/server/scripts/pack.mjs.
       - name: Pack
-        run: pnpm --filter @velvet-thunder/holt pack --pack-destination "$RUNNER_TEMP/pack"
+        run: node packages/server/scripts/pack.mjs "$RUNNER_TEMP/pack"
       - name: Use NPM_TOKEN if set (first publish only)
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

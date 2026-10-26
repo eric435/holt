@@ -1,0 +1,90 @@
+name: Bug report
+description: Something in the holt server, the Vite plugin or the Chrome extension doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Before you start:
+
+        - **Security problems** go to a [private report](https://github.com/eric435/holt/security/advisories/new), not here (see [SECURITY.md](https://github.com/eric435/holt/blob/main/SECURITY.md)).
+        - [docs/TROUBLESHOOTING.md](https://github.com/eric435/holt/blob/main/docs/TROUBLESHOOTING.md) covers the common problems (the red "!", "Update needed", microphone, transcription, ports).
+        - **Don't paste tokens or private captures.** Leave out `HOLT_TOKEN` and any `token` from `holt.config.json`, and check screenshots, recordings and `notes.md` excerpts for anything private first: they contain whatever was on screen, page URLs (with their query strings), and your local paths.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Quote error messages exactly (from holt's menu, the settings panel, the toolbar icon's tooltip, or the server's output).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the server with ...
+        2. Open http://localhost:5173/...
+        3. Press Alt+S and ...
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: holt server version
+      description: The output of `npx holt --version` in your project (or the version in your lockfile).
+      placeholder: "0.0.2"
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: holt extension version
+      description: At the bottom of holt's menu → Settings ("holt extension ..."), or on chrome://extensions. Say whether it is from the Chrome Web Store or built from source (and which commit).
+      placeholder: "0.1.0, built from source at abc1234"
+    validations:
+      required: true
+  - type: input
+    id: chrome-version
+    attributes:
+      label: Browser and version
+      description: From chrome://version. If it isn't Chrome (Edge, Brave, Arc, ...), say which.
+      placeholder: "Chrome 141.0.7390.55"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.4, Windows 11, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How you run the server
+      options:
+        - Standalone (npx holt)
+        - Vite plugin
+        - Vite plugin, with pages served by another backend (Rails, Laravel, Django, ...)
+        - Programmatic (createHolt)
+        - Not sure / not relevant
+    validations:
+      required: true
+  - type: input
+    id: vite-version
+    attributes:
+      label: Vite version
+      description: Only with the Vite plugin (`npx vite --version`).
+      placeholder: "7.1.3"
+  - type: textarea
+    id: config
+    attributes:
+      label: Non-default configuration
+      description: Anything you changed in holt.config.json, flags, plugin options or the extension's settings (server mode and URL, transcription, keep audio). Leave tokens out; just say whether one is set.
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server output and console errors
+      description: The `[holt]` lines from the server or Vite, and errors from the extension's service worker console (chrome://extensions → holt → "service worker"), if any. Check them for tokens and private paths first.
+      render: text

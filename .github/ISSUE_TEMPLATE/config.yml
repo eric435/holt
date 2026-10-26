@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/eric435/holt/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue. SECURITY.md explains what to include.
+  - name: Security policy
+    url: https://github.com/eric435/holt/blob/main/SECURITY.md
+    about: What counts as a vulnerability, and which versions get fixes.
