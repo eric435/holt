@@ -11,6 +11,7 @@ import path from "node:path";
 import {
   ACCEPTED_MEDIA_TYPES,
   KIND_HEADER,
+  PROTOCOL_VERSION,
   type ApiResponse,
   type EntryResponse,
   type MediaUploadResponse,
@@ -50,6 +51,9 @@ async function status(_req: IncomingMessage, { config, sessions }: RouteContext)
     ok: true,
     name: "holt",
     version: VERSION,
+    // What the extension checks before it captures anything (see
+    // PROTOCOL_VERSION in @holt/protocol for when it changes).
+    protocolVersion: PROTOCOL_VERSION,
     // A copy, so a route can never hand out (and a test never mutate) the
     // config's own object.
     project: { ...config.project },

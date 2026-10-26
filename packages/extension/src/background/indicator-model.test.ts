@@ -49,6 +49,12 @@ describe("indicatorFor", () => {
     });
   });
 
+  it("a holt server of another protocol version: red '!' with what to update", () => {
+    const message = "The holt server in acme-web is too old for this extension. Update it: npm i -D @velvet-thunder/holt@latest";
+    const server: ServerInfo = { serverUrl: "http://localhost:5173", source: "tab", localPage: true, ok: false, incompatible: true, message };
+    expect(indicatorFor({ recording: {}, shortcuts, server, formatClock })).toEqual({ recording: false, text: "!", color: REC_COLOR, title: `holt: ${message}` });
+  });
+
   it("no server while on some other website: no badge (nothing to nag about there)", () => {
     expect(indicatorFor({ recording: {}, shortcuts, server: down(false), formatClock })).toEqual({
       recording: false,

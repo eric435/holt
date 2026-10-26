@@ -50,6 +50,14 @@ export function takeScreenshot(mode: ScreenshotMode, tab: chrome.tabs.Tab): Prom
       const page = pageContextFromTab(tab);
 
       if (mode === "area") {
+        // Before the user drags: a server of another protocol version
+        // (shared/server.ts assertCompatible) is reported now. Anything
+        // else (no server yet, ...) is left to the upload, as before; it
+        // checks again (apiForTab), as for the other modes, whose capture
+        // is instant.
+        await apiForTab(tab).catch((error: unknown) => {
+          if (error instanceof ApiError && error.code === "incompatible") throw error;
+        });
         await startAreaSelection(tab.id, tab.windowId, page);
         return { ok: true, pending: true };
       }

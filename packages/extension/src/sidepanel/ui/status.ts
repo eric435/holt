@@ -7,7 +7,10 @@
  * project it writes into (from /status) prominently, then
  * "holt <version> · <host:port> · <how it was picked>" muted, where the
  * last part is "from this tab", "fixed URL" or "fallback (no holt on this
- * page)". The session buttons act on that same server.
+ * page)". The session buttons act on that same server. A server that
+ * speaks another protocol version (shared/protocol-compat.ts) is shown as
+ * down, with the message saying which side to update, and the session
+ * buttons are off, as for one that doesn't answer.
  *
  * Re-resolved and re-checked: every few seconds while the panel is visible
  * (stopped when it is hidden, e.g. when the user switches to another side
@@ -24,6 +27,7 @@
 
 import { createApi, type Api } from "../../shared/api.js";
 import { errorMessage, sendMessage } from "../../shared/messages.js";
+import { protocolCompatibility } from "../../shared/protocol-compat.js";
 import { serverLabel, sourceLabel } from "../../shared/server-label.js";
 import { HoltNotAnsweringError, type ResolvedServer } from "../../shared/server-resolve.js";
 import { apiForServer, resolveServerForTab } from "../../shared/server.js";
@@ -149,7 +153,11 @@ export async function refreshStatus(): Promise<void> {
     const where = { serverUrl: resolved.serverUrl, source: resolved.source };
     try {
       const status = resolved.status ?? (await createApi({ serverUrl: resolved.serverUrl, token: getState().settings.token }).status());
-      next = { resolved: where, server: { kind: "ok", status }, session: status.session };
+      // A holt server of another protocol version is shown like one that is down (captures refuse it), with what to update.
+      const compatibility = protocolCompatibility(status, resolved.serverUrl);
+      next = compatibility.ok
+        ? { resolved: where, server: { kind: "ok", status }, session: status.session }
+        : { resolved: where, server: { kind: "down", message: compatibility.message } };
     } catch (error) {
       // Expected while the server isn't running: show it in the UI, don't log
       // it as an error to the console.

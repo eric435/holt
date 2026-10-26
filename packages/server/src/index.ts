@@ -32,6 +32,7 @@ export {
   DEFAULT_PORT,
   DEFAULT_HOST,
   ACCEPTED_MEDIA_TYPES,
+  PROTOCOL_VERSION,
 } from "@holt/protocol";
 export type {
   Entry,

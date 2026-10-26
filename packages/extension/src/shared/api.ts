@@ -15,8 +15,12 @@
  * server is on loopback, and a redirect from whatever answers there must
  * not carry a probe or the token to another machine.
  *
- * `createApi` takes its config explicitly and has no chrome.* dependencies,
- * so tests can drive it with a stubbed global `fetch`.
+ * `createApi` takes its config explicitly and this module imports nothing
+ * that touches chrome.* (the settings-based `getApi` lives in
+ * shared/server.ts), so tests can drive it with a stubbed global `fetch`,
+ * and the protocol contract test
+ * (packages/server/src/http/extension-contract.test.ts) can run it in Node
+ * against the real server.
  */
 
 import {
@@ -35,7 +39,6 @@ import {
   type StartSessionRequest,
   type StatusResponse,
 } from "@holt/protocol";
-import { loadSettings } from "./settings.js";
 
 export interface ApiConfig {
   /** Bare origin, already validated by settings.ts. */
@@ -48,8 +51,10 @@ export interface ApiConfig {
  * Error codes: the server's own, plus client-side ones:
  *  - `unreachable`  network error / connection refused / timeout
  *  - `bad-response` the server answered with something that isn't our JSON
+ *  - `incompatible` holt answered, but speaks another protocol version
+ *                   (shared/protocol-compat.ts; thrown by shared/server.ts)
  */
-export type ApiErrorCode = ErrorCode | "unreachable" | "bad-response";
+export type ApiErrorCode = ErrorCode | "unreachable" | "bad-response" | "incompatible";
 
 export class ApiError extends Error {
   override readonly name = "ApiError";
@@ -193,20 +198,4 @@ function isOkBody(body: unknown): boolean {
  */
 export function isHoltStatus(body: unknown): body is StatusResponse {
   return typeof body === "object" && body !== null && (body as { ok?: unknown }).ok === true && (body as { name?: unknown }).name === "holt";
-}
-
-/**
- * Convenience for callers in the extension: build a client from the current
- * settings (the fixed/fallback URL, no auto-detection; see shared/server.ts
- * for "the server for this tab"). Settings are read from storage on every call (cheap), because the
- * worker may have been restarted since the last call and the user may have
- * changed them in the panel.
- *
- * Pass `config` to skip storage. The offscreen document must: it has no
- * chrome.storage at all (offscreen documents only get chrome.runtime), so
- * the worker sends it the server URL and token with each start request.
- */
-export async function getApi(config?: ApiConfig): Promise<Api & { serverUrl: string }> {
-  const settings = config ?? (await loadSettings());
-  return { ...createApi(settings), serverUrl: settings.serverUrl };
 }

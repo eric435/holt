@@ -26,7 +26,7 @@ export default defineConfig({
   },
   format: ["esm"],
   platform: "node",
-  target: "node20",
+  target: "node22",
   // Shared code between the entries goes into chunks instead of being
   // duplicated, so `@velvet-thunder/holt` and `@velvet-thunder/holt/vite` share one copy.
   splitting: true,

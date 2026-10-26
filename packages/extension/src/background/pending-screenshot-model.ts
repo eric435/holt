@@ -3,10 +3,12 @@
  * (background/pending-screenshot.ts), unit-tested.
  */
 
-import { ENTRY_FIELD_LIMITS, type NoteEntry, type ScreenshotEntry } from "@holt/protocol";
 import { ApiError } from "../shared/api.js";
-import { clampText } from "../shared/page-context.js";
 import type { PendingScreenshot } from "../shared/state.js";
+
+// The bodies themselves are built with every other entry body, where the
+// protocol contract test can reach them (shared/entry-bodies.ts).
+export { orphanedScreenshotNote, screenshotEntry } from "../shared/entry-bodies.js";
 
 /**
  * A pending screenshot older than this, whose prompt window is gone, is
@@ -24,21 +26,6 @@ export const PENDING_SCREENSHOT_TTL_MS = 2 * 60_000;
  */
 export const PENDING_SCREENSHOT_BACKUP_MAX_AGE_MS = 24 * 60 * 60_000;
 
-/** The single entry for a screenshot: the note only if the user wrote one. */
-export function screenshotEntry(pending: PendingScreenshot, note: string): ScreenshotEntry {
-  const text = noteText(note);
-  return {
-    kind: "screenshot",
-    capturedAt: pending.capturedAt,
-    page: pending.page,
-    file: pending.file,
-    mode: pending.mode,
-    width: pending.width,
-    height: pending.height,
-    ...(text && { note: text }),
-  };
-}
-
 /**
  * At worker start: is this pending screenshot abandoned, i.e. should it be
  * posted without a note now? Only if its prompt window is not open (an open
@@ -46,20 +33,6 @@ export function screenshotEntry(pending: PendingScreenshot, note: string): Scree
  */
 export function isAbandoned(pending: PendingScreenshot, now: number, promptOpen: boolean): boolean {
   return !promptOpen && now - pending.at > PENDING_SCREENSHOT_TTL_MS;
-}
-
-/**
- * The user's words about a screenshot whose own entry can no longer be
- * written (`isPermanentEntryError`): a plain note on the same page, saying
- * which screenshot it was about, so the words are not lost.
- */
-export function orphanedScreenshotNote(pending: PendingScreenshot, note: string): NoteEntry {
-  return {
-    kind: "note",
-    capturedAt: pending.capturedAt,
-    page: pending.page,
-    note: noteText(`About screenshot ${pending.file} from an earlier session: ${note.trim()}`),
-  };
 }
 
 /**
@@ -78,9 +51,4 @@ export function isPermanentEntryError(error: unknown): boolean {
   if (!(error instanceof ApiError) || error.status === undefined) return false;
   if (error.status < 400 || error.status >= 500) return false;
   return ![403, 408, 409, 429].includes(error.status);
-}
-
-/** Note text as the server takes it: trimmed, within its length limit. */
-function noteText(note: string): string {
-  return clampText(note.trim(), ENTRY_FIELD_LIMITS.note);
 }

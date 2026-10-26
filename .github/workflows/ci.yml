@@ -8,15 +8,28 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request makes the older run moot. Pushes to
+# main are never cancelled, so every commit there gets a full result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Everything except e2e, on Linux, on each supported Node major (the
+  # engines floor in package.json and the current release line).
   verify:
+    name: verify (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
@@ -27,9 +40,122 @@ jobs:
       # dependency. See packages/server/scripts/check-pack.mjs.
       - name: Check published files
         run: pnpm --filter @velvet-thunder/holt check-pack
+      # The root scripts only cover packages/*. The example app is what
+      # e2e runs and what new contributors try first: it must keep
+      # compiling against the built plugin (its vite.config.ts imports
+      # @velvet-thunder/holt/vite from dist/, hence after `pnpm build`).
+      - name: Example app (typecheck and build)
+        run: |
+          pnpm --filter @holt/example-vite-app typecheck
+          pnpm --filter @holt/example-vite-app build
       # Load the built extension in a real headless Chrome and fail on any
-      # startup error, forged-message acceptance, or storage leak.
+      # startup error, forged-message acceptance, or storage leak. CI is set,
+      # so no section may be skipped (see smoke.mjs).
       - name: Extension smoke test
         run: pnpm --filter @holt/extension smoke
         env:
           CHROME_PATH: /usr/bin/google-chrome
+
+  # The server writes files and has Windows-specific path handling
+  # (output-guard.ts, assertInside); its unit tests must pass on a real
+  # Windows and macOS file system too. The extension and the browser tests
+  # stay on Linux: they don't touch the file system and Chrome behaves the
+  # same there.
+  server-os:
+    name: server (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      # Windows runners check out with CRLF line endings by default; the
+      # tests compare text (escaping, notes.md) written with "\n".
+      - name: Keep LF line endings
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @velvet-thunder/holt typecheck
+      - run: pnpm --filter @velvet-thunder/holt build
+      - run: pnpm --filter @velvet-thunder/holt test
+
+  # The Vite plugin against every major in the peer range, at its floor and
+  # at its latest release. The plugin only imports types from vite, so the
+  # job checks two things: it typechecks against that version's types, and
+  # vite.test.ts passes, whose last block starts a real dev server of that
+  # version. Raise the peer range in packages/server/package.json only
+  # together with a new entry here.
+  vite-compat:
+    name: vite ${{ matrix.vite }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # "5.4.12" and "6.0.9" are the security floors (GHSA-vg6x-rcgg-rjx6,
+        # see src/adapters/vite.ts); a bare major means its latest release.
+        vite: ["5.4.12", "5", "6.0.9", "6", "7.0.0", "7", "8.0.0", "8"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Changes package.json and pnpm-lock.yaml in this job's checkout only;
+      # the committed lockfile keeps the one version the other jobs use.
+      - name: Install vite@${{ matrix.vite }} for the server package
+        run: pnpm --filter @velvet-thunder/holt add -D "vite@${{ matrix.vite }}"
+      - name: Check which vite is installed
+        working-directory: packages/server
+        run: |
+          node -e '
+            const want = process.argv[1];
+            const got = require("vite/package.json").version;
+            console.log(`vite ${got} (wanted ${want})`);
+            if (got !== want && got.split(".")[0] !== want) process.exit(1);
+          ' "${{ matrix.vite }}"
+      - run: pnpm --filter @velvet-thunder/holt typecheck
+      - name: Vite adapter tests
+        run: pnpm --filter @velvet-thunder/holt exec vitest run src/adapters/vite.test.ts
+
+  # The real capture flows: the built extension in headless Chrome against
+  # the real server in examples/vite-app, checked on disk (see e2e.mjs and
+  # docs/TESTING.md). The extension's unit-test coverage leaves out all
+  # chrome.* glue on the promise that this and the smoke test run it.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # e2e.mjs builds what it needs itself (the server only if
+      # packages/server/dist is missing, the extension always).
+      - name: End-to-end test
+        run: pnpm --filter @holt/extension e2e
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+          # On failure e2e.mjs saves the session folder (notes.md, PNGs,
+          # WebMs), Vite's output, the failures and a screenshot of every
+          # open page here.
+          E2E_ARTIFACTS_DIR: ${{ runner.temp }}/e2e-artifacts
+      - name: Upload e2e artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: ${{ runner.temp }}/e2e-artifacts
+          if-no-files-found: ignore
+          retention-days: 7

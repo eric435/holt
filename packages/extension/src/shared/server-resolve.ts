@@ -41,9 +41,10 @@
  */
 
 import type { StatusResponse } from "@holt/protocol";
+import type { ServerSource } from "./server-label.js";
 import { isLoopbackHost, type Settings } from "./settings.js";
 
-export type ServerSource = "tab" | "fixed" | "fallback";
+export type { ServerSource };
 
 export interface ResolvedServer {
   /** Bare origin of the server to use. */

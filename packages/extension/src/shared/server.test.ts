@@ -9,10 +9,11 @@
  * every access; server.ts swallows that by design ("a broken cache only costs
  * extra probes"), which is also tested.
  */
-import { BASE_PATH, CLIENT_HEADER, CLIENT_HEADER_VALUE, TOKEN_HEADER } from "@holt/protocol";
+import { BASE_PATH, CLIENT_HEADER, CLIENT_HEADER_VALUE, TOKEN_HEADER, type StatusResponse } from "@holt/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "./api.js";
 import { HoltNotAnsweringError } from "./server-resolve.js";
-import { resolveServerForTab, resolveServerForUrl } from "./server.js";
+import { assertCompatible, compatibleServerForTab, resolveServerForTab, resolveServerForUrl } from "./server.js";
 import { DEFAULT_SETTINGS, type Settings } from "./settings.js";
 
 const VITE = "http://localhost:5173";
@@ -140,5 +141,41 @@ describe("with storage.session: an origin that has been holt", () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     expect(await resolveServerForUrl("http://localhost:3000/", settings)).toEqual({ serverUrl: FALLBACK, source: "fallback" });
     expect(session.get("holtOrigins")).toBeUndefined();
+  });
+});
+
+describe("assertCompatible: captures refuse a server of another protocol version up front", () => {
+  it("uses the status the probe already has, without another request", async () => {
+    await expect(assertCompatible({ serverUrl: VITE, status: { ...holtStatus, protocolVersion: 1 } as StatusResponse }, "s3cret")).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("otherwise asks GET /status, with the token", async () => {
+    fetchMock.mockResolvedValue(json(holtStatus)); // no protocolVersion: an old server, protocol 1
+    await assertCompatible({ serverUrl: FALLBACK }, "s3cret");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${FALLBACK}${BASE_PATH}/status`);
+    expect((init.headers as Record<string, string>)[TOKEN_HEADER]).toBe("s3cret");
+  });
+
+  it("throws an 'incompatible' ApiError saying which side to update", async () => {
+    fetchMock.mockResolvedValue(json({ ...holtStatus, protocolVersion: 99, project: { name: "acme-web", source: "config" } }));
+    const error = await assertCompatible({ serverUrl: FALLBACK }, "").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ code: "incompatible", message: expect.stringMatching(/^This holt extension is older than the holt server in acme-web/) });
+  });
+
+  it("leaves a failing status request to the capture's own request (not running, wrong token)", async () => {
+    fetchMock.mockResolvedValue(json({ ok: false, error: { code: "forbidden", message: 'Missing or wrong "x-holt-token" header' } }, 403));
+    await expect(assertCompatible({ serverUrl: FALLBACK }, "")).resolves.toBeUndefined();
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    await expect(assertCompatible({ serverUrl: FALLBACK }, "")).resolves.toBeUndefined();
+  });
+
+  it("compatibleServerForTab resolves, then checks the server it found", async () => {
+    fetchMock.mockResolvedValue(json({ ...holtStatus, protocolVersion: 99 }));
+    await expect(compatibleServerForTab({ url: `${VITE}/` }, settings)).rejects.toMatchObject({ code: "incompatible" });
+    fetchMock.mockResolvedValue(json({ ...holtStatus, protocolVersion: 1 }));
+    await expect(compatibleServerForTab({ url: `${VITE}/` }, settings)).resolves.toMatchObject({ serverUrl: VITE, source: "tab" });
   });
 });

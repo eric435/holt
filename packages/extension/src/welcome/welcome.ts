@@ -7,7 +7,8 @@
  *    client as the panel (GET /__holt/status), now, every few seconds while
  *    the tab is visible (so starting the server turns it green by itself;
  *    one request to a loopback address, nothing while hidden), and when the
- *    settings change. What it says is welcome-model.ts. Without a page to
+ *    settings change; a holt server that speaks another protocol version
+ *    (shared/protocol-compat.ts) is red, with what to update. What it says is welcome-model.ts. Without a page to
  *    look at there is no auto-detection here (the Vite plugin's server is
  *    found from the captured page's origin), which the "not found" text
  *    explains;
@@ -19,6 +20,7 @@
  */
 
 import { ApiError, createApi } from "../shared/api.js";
+import { protocolCompatibility } from "../shared/protocol-compat.js";
 import { getShortcuts, SHORTCUTS_PAGE } from "../shared/shortcuts.js";
 import { loadSettings, onSettingsChanged } from "../shared/settings.js";
 import { h, replace } from "../sidepanel/ui/dom.js";
@@ -56,7 +58,8 @@ async function checkServer(): Promise<void> {
   let result: ServerCheck;
   try {
     const status = await createApi({ serverUrl, token }).status();
-    result = { kind: "ok", serverUrl, status };
+    const compatibility = protocolCompatibility(status, serverUrl);
+    result = compatibility.ok ? { kind: "ok", serverUrl, status } : { kind: "incompatible", serverUrl, message: compatibility.message };
   } catch (error) {
     // Not running is the expected answer on a fresh install: show it, don't log it.
     result = error instanceof ApiError && error.code === "forbidden" ? { kind: "needs-token", serverUrl } : { kind: "down", serverUrl };

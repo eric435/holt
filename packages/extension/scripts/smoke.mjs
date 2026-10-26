@@ -27,10 +27,13 @@
  *      simulated toolbar click opens the menu and grants activeTab
  *      (captureVisibleTab succeeds), its Settings item opens the side panel,
  *      and page-helper metrics taken as soon as the panel starts narrowing
- *      the page wait for the final width.
+ *      the page wait for the final width. A Chrome that can't simulate the
+ *      toolbar click (no Extensions.triggerAction) skips that last part with
+ *      a warning locally; with CI set, that is a failure.
  *
  * Usage: pnpm --filter @holt/extension smoke   (build first)
  * Env:   CHROME_PATH=/path/to/chrome   to use another Chrome/Chromium.
+ *        CI=1                          no skipped sections (GitHub Actions sets it).
  */
 
 import { existsSync } from "node:fs";
@@ -91,6 +94,8 @@ async function run(headless) {
     const expect = (cond, message) => cond || problems.push(message);
 
     // ---- 1. worker starts cleanly ------------------------------------------
+    // A deliberate fixed wait: the check is that no error shows up within
+    // this window, so there is no condition to wait for instead.
     await sleep(ERROR_WINDOW_MS);
 
     // ---- 2. worker state -----------------------------------------------------
@@ -186,7 +191,11 @@ async function run(headless) {
     await collector.watch(panel);
     await cdp.send("Page.enable", {}, panel);
     await cdp.send("Page.navigate", { url: panelUrl }, panel);
+    // Deliberately fixed, as for the worker: the panel's first seconds must
+    // produce no console error (collected at the end), not just render.
     await sleep(ERROR_WINDOW_MS);
+    // On a slow runner it may still be rendering after that window.
+    await waitFor(() => evaluate(cdp, panel, "document.body.textContent.includes('Settings')"), { what: "the side panel to render" }).catch(() => undefined);
     const panelText = await evaluate(cdp, panel, "document.body.textContent"); // innerText would apply text-transform
     expect(panelText.includes("This session") && panelText.includes("Settings"), "side panel did not render its sections");
     expect(!panelText.includes("Capture"), "side panel still has the Capture section (capturing moved to the toolbar menu)");
@@ -246,7 +255,7 @@ async function run(headless) {
       page = await attach(cdp, pageTarget);
       await collector.watch(page);
       await cdp.send("Page.enable", {}, page);
-      await sleep(800);
+      await waitFor(() => evaluate(cdp, page, "document.readyState === 'complete' && !!document.querySelector('header')"), { what: "the fixture page to load" });
 
       // No holt anywhere: the fixture's origin answers every path with HTML
       // (not holt), and the fallback URL (localhost:4999, migrated above) is
@@ -374,10 +383,11 @@ async function run(headless) {
         for (const type of ["keyDown", "keyUp"]) {
           await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, page);
         }
-        await sleep(500);
-        const overlaysAfterEsc = await evaluate(cdp, page, "document.querySelectorAll('holt-area-select').length");
+        const overlaysAfterEsc = await waitFor(() => evaluate(cdp, page, "document.querySelectorAll('holt-area-select').length === 0"), { timeoutMs: 5_000, what: "Esc to remove the area-select overlay" })
+          .then(() => 0, () => -1);
         expect(overlaysAfterEsc === 0, "Esc did not remove the area-select overlay");
-        const toastSeen = await evaluate(cdp, panel, "document.getElementById('toasts').innerText.includes('Area selection cancelled')");
+        const toastSeen = await waitFor(() => evaluate(cdp, panel, "document.getElementById('toasts').innerText.includes('Area selection cancelled')"), { timeoutMs: 5_000, what: "the 'area selection cancelled' toast" })
+          .catch(() => false);
         expect(toastSeen, "panel did not receive the 'area selection cancelled' toast from the worker");
         const forgedShown = await evaluate(cdp, panel, "document.getElementById('toasts').innerText.includes('forged-by-content-script')");
         expect(!forgedShown, "panel displayed a toast forged by a content script");
@@ -387,34 +397,52 @@ async function run(headless) {
       // ---- 5. toolbar click: opens the menu AND grants activeTab; Settings opens the panel
       // Record every width the page goes through while the panel opens.
       await evaluate(cdp, page, `window.__holtWidths = [innerWidth]; addEventListener("resize", () => __holtWidths.push(innerWidth)); true`);
-      let triggered = false;
+      // Extensions.triggerAction is experimental CDP (it needs
+      // --enable-unsafe-extension-debugging, see lib/chrome.mjs), and an older
+      // or unbranded local Chrome may not have it. Only that one case may
+      // skip this section, and only locally, with a warning. CI's Chrome
+      // (current google-chrome on ubuntu-latest) has it, and a skip there
+      // would silently drop every check below
+      // (menu, Settings -> side panel, activeTab, the resize wait) while the
+      // run still passed. Anything else that goes wrong here is a failure.
+      let menuOpened = false;
+      let clicked = false;
       try {
         await clickToolbarIcon(cdp, worker.extensionId, fixtureUrl);
-        const menuUrl = `chrome-extension://${worker.extensionId}/menu.html`;
-        const menuTarget = await waitFor(async () => (await cdp.send("Target.getTargets")).targetInfos.find((t) => t.url === menuUrl), { what: "the toolbar menu" });
-        const menu = await attach(cdp, menuTarget.targetId);
-        await collector.watch(menu);
-        await waitFor(() => evaluate(cdp, menu, "document.querySelectorAll('.menu-item').length > 0"), { what: "the menu items" });
-        // No server for this page: the menu says so, and offers the settings.
-        const menuProblem = await waitFor(
-          () => evaluate(cdp, menu, "(() => { const p = document.getElementById('problem'); return p && !p.hidden ? p.innerText : null; })()"),
-          { timeoutMs: 3_000, what: "the menu's 'Not connected' line" },
-        ).catch(() => null);
-        expect(/^Not connected/.test(menuProblem ?? "") && /localhost:4999/.test(menuProblem ?? "") && /Open settings/.test(menuProblem ?? ""), `menu problem line: ${JSON.stringify(menuProblem)}`);
-        const menuWidth = await evaluate(cdp, menu, "document.body.scrollWidth");
-        expect(menuWidth <= 260, `the menu is ${menuWidth}px wide with the problem line (should stay 260px)`);
-        log(`menu without a server: ${JSON.stringify((menuProblem ?? "").replace(/\s+/g, " "))} (${menuWidth}px wide)`);
-        // A real click is a user gesture, which sidePanel.open() needs.
-        const { exceptionDetails } = await cdp.send("Runtime.evaluate", {
-          expression: "[...document.querySelectorAll('.menu-item')].find(b => b.textContent.includes('Settings')).click()",
-          userGesture: true,
-        }, menu);
-        if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
-        triggered = true;
+        clicked = true;
       } catch (error) {
-        log(`skipping toolbar-click check: ${error.message}`);
+        const unsupported = /wasn't found|method not found/i.test(error.message);
+        if (unsupported && !process.env.CI) log(`WARNING: this Chrome cannot simulate a toolbar click, skipping the menu, side panel and activeTab checks: ${error.message}`);
+        else problems.push(`simulated toolbar click (Extensions.triggerAction) failed: ${error.message}`);
       }
-      if (triggered) {
+      if (clicked) {
+        try {
+          const menuUrl = `chrome-extension://${worker.extensionId}/menu.html`;
+          const menuTarget = await waitFor(async () => (await cdp.send("Target.getTargets")).targetInfos.find((t) => t.url === menuUrl), { what: "the toolbar menu" });
+          const menu = await attach(cdp, menuTarget.targetId);
+          await collector.watch(menu);
+          await waitFor(() => evaluate(cdp, menu, "document.querySelectorAll('.menu-item').length > 0"), { what: "the menu items" });
+          // No server for this page: the menu says so, and offers the settings.
+          const menuProblem = await waitFor(
+            () => evaluate(cdp, menu, "(() => { const p = document.getElementById('problem'); return p && !p.hidden ? p.innerText : null; })()"),
+            { timeoutMs: 3_000, what: "the menu's 'Not connected' line" },
+          ).catch(() => null);
+          expect(/^Not connected/.test(menuProblem ?? "") && /localhost:4999/.test(menuProblem ?? "") && /Open settings/.test(menuProblem ?? ""), `menu problem line: ${JSON.stringify(menuProblem)}`);
+          const menuWidth = await evaluate(cdp, menu, "document.body.scrollWidth");
+          expect(menuWidth <= 260, `the menu is ${menuWidth}px wide with the problem line (should stay 260px)`);
+          log(`menu without a server: ${JSON.stringify((menuProblem ?? "").replace(/\s+/g, " "))} (${menuWidth}px wide)`);
+          // A real click is a user gesture, which sidePanel.open() needs.
+          const { exceptionDetails } = await cdp.send("Runtime.evaluate", {
+            expression: "[...document.querySelectorAll('.menu-item')].find(b => b.textContent.includes('Settings')).click()",
+            userGesture: true,
+          }, menu);
+          if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
+          menuOpened = true;
+        } catch (error) {
+          problems.push(`toolbar menu after the simulated click: ${error.message}`);
+        }
+      }
+      if (menuOpened) {
         // As soon as the panel starts narrowing the page, while it may still be
         // animating: the helper must wait for the width to settle before
         // measuring. Wait for that first resize rather than asking right after
@@ -433,8 +461,15 @@ async function run(headless) {
           `chrome.tabs.query({}).then(ts => ts.find(t => t.url === ${JSON.stringify(fixtureUrl)}))
              .then(t => chrome.tabs.sendMessage(t.id, { type: "helper:metrics" }))`,
         );
-        await sleep(1000);
-        const settledWidth = await evaluate(cdp, page, "innerWidth");
+        // Then the width the panel animation ends at: unchanged for 4 polls in a row.
+        let lastWidth = -1;
+        let stableFor = 0;
+        const settledWidth = await waitFor(async () => {
+          const w = await evaluate(cdp, page, "innerWidth");
+          stableFor = w === lastWidth ? stableFor + 1 : 0;
+          lastWidth = w;
+          return stableFor >= 4 ? w : null;
+        }, { intervalMs: 150, what: "the page width to settle after the side panel opened" });
         expect(early.widthStable === true, "helper:metrics right after the panel opened reported an unstable width");
         expect(early.innerWidth === settledWidth, `helper:metrics measured ${early.innerWidth}px wide during the panel animation; settled width is ${settledWidth}px`);
         const widths = await evaluate(cdp, page, "__holtWidths");
@@ -452,6 +487,7 @@ async function run(headless) {
         expect(canCapture === true, `toolbar click did not grant activeTab: ${canCapture}`);
         log(`toolbar click -> menu -> Settings: side panel opened=${panels.length > 0}; activeTab granted=${canCapture === true}`);
       }
+      // Grace for a late console error from the last step (collected below).
       await sleep(300);
     } finally {
       fixture.close();

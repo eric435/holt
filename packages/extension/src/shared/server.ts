@@ -22,10 +22,16 @@
  * probe with its own `forbidden` error body, which is enough to know holt
  * is there; the real requests then carry the token, and a wrong token shows
  * up as that server's error, not as a silent fallback.
+ *
+ * Captures also check that the server speaks our protocol version
+ * (`assertCompatible`, shared/protocol-compat.ts) before they start, so a
+ * server from another release is refused up front with a message saying
+ * which side to update.
  */
 
 import type { StatusResponse } from "@holt/protocol";
-import { ApiError, createApi, isHoltStatus, type Api } from "./api.js";
+import { ApiError, createApi, isHoltStatus, type Api, type ApiConfig } from "./api.js";
+import { protocolCompatibility } from "./protocol-compat.js";
 import { PROBE_TIMEOUT_MS, addHoltOrigin, resolveServer, updateProbeCache, type ProbeCacheStore, type ResolvedServer, type ServerSource } from "./server-resolve.js";
 import { loadSettings, type Settings } from "./settings.js";
 import { getState, setState } from "./state.js";
@@ -47,17 +53,77 @@ export async function resolveServerForUrl(tabUrl: string | undefined, settings?:
   return resolveServer({ tabUrl, settings: settings ?? (await loadSettings()), probe, cache: sessionCache, now: Date.now() });
 }
 
-/** An API client for the server of `tab`, with the token from the settings. */
+/**
+ * An API client for the server of `tab`, with the token from the settings,
+ * for a capture: refuses (throws) a server that speaks another protocol
+ * version, see `assertCompatible`.
+ */
 export async function apiForTab(tab: TabUrlLike | undefined): Promise<ResolvedApi> {
   const settings = await loadSettings();
-  const { serverUrl, source } = await resolveServerForTab(tab, settings);
+  const { serverUrl, source } = await compatibleServerForTab(tab, settings);
   return { ...createApi({ serverUrl, token: settings.token }), serverUrl, source };
+}
+
+/** `resolveServerForTab`, then `assertCompatible`: the server a capture on `tab` may go to. */
+export async function compatibleServerForTab(tab: TabUrlLike | undefined, settings?: Settings): Promise<ResolvedServer> {
+  const current = settings ?? (await loadSettings());
+  const resolved = await resolveServerForTab(tab, current);
+  await assertCompatible(resolved, current.token);
+  return resolved;
+}
+
+/**
+ * Throw an ApiError("incompatible") with the message to show if the server
+ * speaks another protocol version than this extension
+ * (shared/protocol-compat.ts). Uses the status the probe just fetched if
+ * there is one, else GET /status with the token: one loopback request
+ * before a capture, so that it refuses before the user records, drags or
+ * types anything, rather than with a 400 afterwards.
+ *
+ * Only a server that answered with another version is refused here. If the
+ * status request itself fails (not running yet, wrong token), the capture
+ * goes ahead exactly as it did before this check existed, and its own
+ * request reports that error: a recording may be started before the
+ * server, and a voice note without microphone access must still get to
+ * the "grant access" offer.
+ */
+export async function assertCompatible(server: { serverUrl: string; status?: StatusResponse | undefined }, token: string): Promise<void> {
+  let status: StatusResponse;
+  try {
+    status = server.status ?? (await createApi({ serverUrl: server.serverUrl, token }).status());
+  } catch {
+    return;
+  }
+  const compatibility = protocolCompatibility(status, server.serverUrl);
+  if (!compatibility.ok) throw new ApiError("incompatible", compatibility.message);
+}
+
+/**
+ * `apiForServer` for a capture (a quick note): refuses a server that speaks
+ * another protocol version, see `assertCompatible`.
+ */
+export async function compatibleApiForServer(serverUrl: string): Promise<Api & { serverUrl: string }> {
+  const { token } = await loadSettings();
+  await assertCompatible({ serverUrl }, token);
+  return { ...createApi({ serverUrl, token }), serverUrl };
 }
 
 /** An API client for a server picked earlier (a pending screenshot's, a quick note's). */
 export async function apiForServer(serverUrl: string): Promise<Api & { serverUrl: string }> {
   const { token } = await loadSettings();
   return { ...createApi({ serverUrl, token }), serverUrl };
+}
+
+/**
+ * A client for the fixed/fallback URL from the current settings (no
+ * auto-detection: `apiForTab` is "the server for this tab"). Settings are
+ * read from storage on every call (cheap), because the worker may have
+ * been restarted since the last call and the user may have changed them in
+ * the panel. Pass `config` to skip storage.
+ */
+export async function getApi(config?: ApiConfig): Promise<Api & { serverUrl: string }> {
+  const settings = config ?? (await loadSettings());
+  return { ...createApi(settings), serverUrl: settings.serverUrl };
 }
 
 /** Is holt at `origin`? See the header for why the token is not sent. */

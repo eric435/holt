@@ -8,8 +8,11 @@
  * flip whenever one opens), resolved the way a capture on that tab would be
  * (shared/server.ts: the tab's own origin if holt answers there, else the
  * fixed/fallback URL), then GET /status on that server with our token.
- * `ok: true` = that answered as holt; anything else is `ok: false` with the
- * API client's message (unreachable, wrong token, not holt, ...).
+ * `ok: true` = that answered as holt and speaks our protocol version;
+ * anything else is `ok: false` with the API client's message (unreachable,
+ * wrong token, not holt, ...) or, for a holt server of another protocol
+ * version, `incompatible: true` and the message saying which side to update
+ * (shared/protocol-compat.ts).
  *
  * When: only on events, never on a timer (an MV3 worker should sleep):
  *   - worker start (the info may be from before a browser restart or an
@@ -31,6 +34,7 @@
 
 import { createApi } from "../shared/api.js";
 import { errorMessage } from "../shared/messages.js";
+import { protocolCompatibility } from "../shared/protocol-compat.js";
 import { projectName } from "../shared/server-label.js";
 import { HoltNotAnsweringError, isLocalPage, type ResolvedServer } from "../shared/server-resolve.js";
 import { resolveServerForTab } from "../shared/server.js";
@@ -86,7 +90,10 @@ async function refreshOnce(): Promise<void> {
     // The probe's status was fetched without the token; it only comes back
     // when the server doesn't require one, so it is as good as our own.
     const status = resolved.status ?? (await createApi({ serverUrl: resolved.serverUrl, token: settings.token }).status());
-    info = { ...base, ok: true, project: projectName(status), version: typeof status.version === "string" ? status.version : "" };
+    const compatibility = protocolCompatibility(status, resolved.serverUrl);
+    info = compatibility.ok
+      ? { ...base, ok: true, project: projectName(status), version: typeof status.version === "string" ? status.version : "" }
+      : { ...base, ok: false, incompatible: true, message: compatibility.message };
   } catch (error) {
     info = { ...base, ok: false, message: errorMessage(error) };
   }

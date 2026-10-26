@@ -11,6 +11,7 @@ import {
   CLIENT_HEADER,
   CLIENT_HEADER_VALUE,
   KIND_HEADER,
+  PROTOCOL_VERSION,
   TOKEN_HEADER,
   type EntryResponse,
   type ErrorResponse,
@@ -23,6 +24,7 @@ import { startStandalone, type StandaloneServer } from "../adapters/standalone.j
 import type { HoltConfig } from "../config/types.js";
 import { createHolt, type Holt } from "../core.js";
 import { MAX_PENDING_UPLOADS } from "../config/defaults.js";
+import { escapeInline } from "../session/escape.js";
 import { silentLogger, type Logger } from "../log.js";
 import { VERSION } from "../version.js";
 
@@ -450,6 +452,7 @@ describe("happy path", () => {
       ok: true,
       name: "holt",
       version: VERSION,
+      protocolVersion: PROTOCOL_VERSION,
       project: { name: path.basename(tempDir ?? ""), source: "directory" },
       session: { id: started.session?.id, entryCount: 2 },
       config: { outputDir: "qa", requiresToken: false },
@@ -463,7 +466,8 @@ describe("happy path", () => {
     expect(await readFile(path.join(dir, "001-screenshot.png"))).toEqual(PNG_BYTES);
     const notes = await readFile(path.join(dir, "notes.md"), "utf8");
     expect(notes).toMatch(/^# Checkout pass \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n/);
-    expect(notes).toContain(`- Project: ${tempDir}`);
+    // Escaped like every inline value: on Windows the backslashes in the path are doubled.
+    expect(notes).toContain(`- Project: ${escapeInline(tempDir ?? "")}`);
     expect(notes).toContain(
       "- Submit button overlaps the footer. ![Screenshot 1](./001-screenshot.png) " +
         "Page: [Checkout – My App](http://localhost:5173/checkout)\n",

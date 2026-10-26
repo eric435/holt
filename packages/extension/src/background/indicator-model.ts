@@ -19,7 +19,9 @@
  * Not recording: no badge while holt is reachable (the tooltip names the
  * project), and a red "!" while no holt server answers for the page in
  * front (`serverInfo`, background/server-info.ts), so you see it before
- * your first capture fails rather than after. Only on pages on this machine
+ * your first capture fails rather than after; the same for a holt server
+ * that speaks another protocol version (`incompatible`), which every
+ * capture would refuse. Only on pages on this machine
  * (loopback), though: on any other website there is nothing to auto-detect,
  * and a permanently red icon while you browse the web would be noise. The
  * toolbar menu explains the problem on every page.
@@ -69,7 +71,9 @@ export function indicatorFor({ recording, shortcuts, server, formatClock = clock
 
   if (parts.length === 0) {
     if (server && !server.ok && server.localPage) {
-      return { recording: false, text: "!", color: REC_COLOR, title: `holt: no server for this page — ${server.message}` };
+      // A server of another protocol version is there, it just can't be used: its message says what to update.
+      const title = server.incompatible ? `holt: ${server.message}` : `holt: no server for this page — ${server.message}`;
+      return { recording: false, text: "!", color: REC_COLOR, title };
     }
     return { recording: false, text: "", color: REC_COLOR, title: name };
   }

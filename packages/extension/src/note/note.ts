@@ -10,7 +10,10 @@
  *  3. Focused textarea: Enter saves, Shift+Enter = newline, Esc closes.
  *  4. Save straight to the server for that page (the worker resolves it,
  *     see `serverFor`; this is an extension page with the same settings
- *     and host permissions as the panel), then hand the entry to
+ *     and host permissions as the panel), after checking that it speaks
+ *     our protocol version (shared/server.ts `assertCompatible`; checked
+ *     once when the page opens too, so the user hears about a server to
+ *     update before typing the note), then hand the entry to
  *     the worker (`entry-created`), which adds it to the panel's recent list
  *     and toasts in the panel or flashes the badge. Show "Saved #N" briefly
  *     and close. Errors stay inline so the text isn't lost.
@@ -43,7 +46,9 @@
  */
 
 import type { PageContext } from "@holt/protocol";
-import { apiForServer, resolveServerForUrl } from "../shared/server.js";
+import { ApiError } from "../shared/api.js";
+import { quickNoteEntry } from "../shared/entry-bodies.js";
+import { compatibleApiForServer, resolveServerForUrl } from "../shared/server.js";
 import { errorMessage, sendMessage, type ScreenshotNoteDraftMessage } from "../shared/messages.js";
 import { noteKeyAction } from "../shared/note-keys.js";
 import { parseNotePageParams } from "../shared/note-prompt.js";
@@ -115,6 +120,14 @@ function quickNoteMode(inWindow: boolean): Mode {
   });
 
   let saving = false;
+  // A server that speaks another protocol version (shared/protocol-compat.ts)
+  // would refuse the note: say so now, before the user types it, not only
+  // on Save. Anything else (not running yet, ...) is left to Save as before.
+  void contextReady
+    .then(async (context) => compatibleApiForServer(await serverFor(context)))
+    .catch((error: unknown) => {
+      if (error instanceof ApiError && error.code === "incompatible" && !saving) showStatus(error.message, "error");
+    });
   return {
     async submit() {
       const note = textarea.value.trim();
@@ -124,8 +137,8 @@ function quickNoteMode(inWindow: boolean): Mode {
       showStatus("Saving…");
       try {
         const context = await contextReady;
-        const api = await apiForServer(await serverFor(context));
-        const { entry, session } = await api.postEntry({ kind: "note", capturedAt: new Date().toISOString(), page: context.page, note });
+        const api = await compatibleApiForServer(await serverFor(context));
+        const { entry, session } = await api.postEntry(quickNoteEntry(context.page, note, new Date().toISOString()));
         // The worker lists it and notifies; if that fails the note is still saved.
         await sendMessage({ type: "entry-created", entry, session }).catch(() => undefined);
         textarea.disabled = true;

@@ -25,7 +25,9 @@ over localhost HTTP:
 The wire format between the halves is defined once, in
 [`packages/shared`](../packages/shared/src/index.ts) (`@holt/protocol`).
 Both sides import those types, so a protocol change that is not applied on
-both sides fails to compile.
+both sides fails to compile. That only covers code built together; what
+happens when an extension and a server from different releases meet is
+[The protocol and version skew](#the-protocol-and-version-skew).
 
 ## Repository layout
 
@@ -44,6 +46,59 @@ docs/
 pnpm workspaces link the packages together. `@holt/protocol` has no build
 step: the other packages import its TypeScript source directly and their own
 bundlers (tsup for the server, esbuild for the extension) compile it in.
+
+## The protocol and version skew
+
+The extension auto-updates from the Chrome Web Store, while each project pins
+its own `@velvet-thunder/holt` in devDependencies, so an extension and a
+server from different releases meeting is the normal case. The shared types
+can't help there (they are compiled into each side separately), so the
+protocol has a version: `PROTOCOL_VERSION` in
+[`packages/shared/src/constants.ts`](../packages/shared/src/constants.ts),
+an integer, reported by the server as `protocolVersion` in `GET /status`.
+
+**When to bump it:** only for breaking changes, where a peer of the previous
+version would misbehave: a route or field removed or renamed, a field whose
+meaning, type or format changes, an optional field that becomes required or
+a new required one in a request. **Not** for additive changes old peers cope
+with: a new optional field (an old server drops unknown keys; an old
+extension ignores what it doesn't read), or a new entry kind (an old server
+refuses it with a 400 saying the extension is probably newer than the server
+and how to update it, and the extension shows the server's message as the
+capture's error). Servers before the field existed (0.0.2 and older) speak
+version 1, so a status without it counts as 1.
+
+**What the extension does with it:** one pure function,
+`protocolCompatibility` in
+[`shared/protocol-compat.ts`](../packages/extension/src/shared/protocol-compat.ts),
+compares the server's version with its own: equal is compatible; a lower one
+means "the holt server in <project> is too old for this extension" with the
+npm and npx commands that update it; a higher one means "this holt extension
+is older than the server" with how to update the extension. An incompatible
+server flows through the same paths as one that doesn't answer or wants a
+token: `serverInfo` is `ok: false` (with `incompatible: true`), so the
+toolbar shows its red "!" with the message and the menu says "Update
+needed"; the side panel's status line shows it as down; the welcome page is
+red. Captures check before they start (`assertCompatible` in
+`shared/server.ts`: before a recording or voice note starts, before an area
+selection, before an upload, when the quick-note window opens and when it
+saves), so they refuse with that message instead of with a 400 after the
+user did the work.
+
+**The runtime contract test.**
+[`packages/server/src/http/extension-contract.test.ts`](../packages/server/src/http/extension-contract.test.ts)
+puts both real halves together in one Node process: the extension's API
+client, entry-body builders, media types and compatibility check (imported
+by relative path) talk over HTTP to a real in-process server. Every entry
+kind, with and without its optional fields, must be accepted and come back
+with exactly the fields sent (a field the server drops fails too); every
+media type the recorders ask for must be accepted as an upload of its kind;
+and the server's real `/status` must pass the extension's compatibility
+check. It runs with the server's tests (`pnpm test`), and the server's
+typecheck covers the extension modules it imports, which keeps them free of
+`chrome.*`: the extension's request building lives in small pure modules
+(`shared/api.ts`, `shared/entry-bodies.ts`, `shared/media-types.ts`) for
+that reason.
 
 ## The server package (`packages/server`, published as `@velvet-thunder/holt`)
 

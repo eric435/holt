@@ -24,7 +24,7 @@
   "type": "module",
   "sideEffects": false,
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "holt": "dist/cli.js"
@@ -61,7 +61,7 @@
     "prepublishOnly": "pnpm build && node scripts/check-pack.mjs"
   },
   "peerDependencies": {
-    "vite": "^5.4.12 || >=6.0.9"
+    "vite": "^5.4.12 || ^6.0.9 || ^7.0.0 || ^8.0.0"
   },
   "peerDependenciesMeta": {
     "vite": {

@@ -19,6 +19,8 @@ export type ServerCheck =
   | { kind: "ok"; serverUrl: string; status: StatusLike }
   /** holt answered, but refuses requests without the token its config sets. */
   | { kind: "needs-token"; serverUrl: string }
+  /** holt answered, but speaks another protocol version; `message` says which side to update (shared/protocol-compat.ts). */
+  | { kind: "incompatible"; serverUrl: string; message: string }
   | { kind: "down"; serverUrl: string };
 
 export interface ServerLine {
@@ -42,6 +44,8 @@ export function serverLine(check: ServerCheck): ServerLine {
     }
     case "needs-token":
       return { tone: "green", text: `Found holt at ${host}`, detail: "It requires a token (holt.config.json sets one): enter it in holt's menu → Settings." };
+    case "incompatible":
+      return { tone: "red", text: `Found holt at ${host}, but it doesn't work with this version of the extension.`, detail: check.message };
     case "down":
       return {
         tone: "red",

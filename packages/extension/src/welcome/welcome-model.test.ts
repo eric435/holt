@@ -28,6 +28,15 @@ describe("serverLine", () => {
     expect(line.detail).toMatch(/token/);
   });
 
+  it("is red for a holt server of another protocol version, with the message saying what to update", () => {
+    const message = "The holt server in acme-web is too old for this extension. Update it: …";
+    expect(serverLine({ kind: "incompatible", serverUrl: url, message })).toEqual({
+      tone: "red",
+      text: "Found holt at 127.0.0.1:4848, but it doesn't work with this version of the extension.",
+      detail: message,
+    });
+  });
+
   it("says 'not yet' when nothing answers, and why that can be fine with the Vite plugin", () => {
     const line = serverLine({ kind: "down", serverUrl: "http://localhost:5173" });
     expect(line.tone).toBe("red");

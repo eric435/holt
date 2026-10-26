@@ -166,11 +166,14 @@ export interface PendingScreenshot {
  *
  * "Connected" (`ok: true`) means: the server that a capture on that tab
  * would go to right now (shared/server.ts) answered GET /status as holt,
- * with our token if one is set.
+ * with our token if one is set, and speaks our protocol version
+ * (shared/protocol-compat.ts). A holt server that speaks another one is
+ * `ok: false` with `incompatible: true`, and `message` says which side to
+ * update: it is there, but captures refuse it.
  */
 export type ServerInfo = ServerInfoBase & (
   | { ok: true; project: string | null; version: string }
-  | { ok: false; message: string }
+  | { ok: false; message: string; incompatible?: true }
 );
 
 interface ServerInfoBase {

@@ -49,8 +49,8 @@
  *   forwards to the box on the page)
  */
 
-import { ENTRY_FIELD_LIMITS, type EntryInput, type EntryKind, type PageContext } from "@holt/protocol";
-import { getApi } from "../shared/api.js";
+import type { EntryInput, EntryKind, PageContext } from "@holt/protocol";
+import { createApi } from "../shared/api.js";
 import {
   errorMessage,
   isOffscreenCommitRequest,
@@ -73,7 +73,7 @@ import {
   type ToastLevel,
 } from "../shared/messages.js";
 import type { RecordedMedia } from "../shared/media-recorder.js";
-import { clampText } from "../shared/page-context.js";
+import { noteText, recordingEntry, voiceNoteEntry } from "../shared/entry-bodies.js";
 import { keepsVoiceAudio } from "../shared/settings.js";
 import { startTabRecording } from "./tab.js";
 import type { TranscriptResult, TranscriptUpdate } from "../shared/speech.js";
@@ -276,43 +276,34 @@ function label(kind: RecorderKind): string {
 
 async function saveTab(current: Active, media: RecordedMedia, transcript: string): Promise<void> {
   const capturedAt = new Date(Date.now() - media.durationMs).toISOString();
-  const text = noteText(transcript);
   toast("info", `Uploading recording (${(media.blob.size / 1e6).toFixed(1)} MB)…`);
-  await upload(current.settings, media.blob, "recording", (file) => ({
-    kind: "recording",
-    capturedAt,
-    page: current.page,
-    file,
-    durationMs: media.durationMs,
-    // The reviewed narration is the user's words about the recording.
-    ...(text && { note: text }),
-  }));
+  // The reviewed narration is the user's words about the recording.
+  const base = { capturedAt, page: current.page, durationMs: media.durationMs };
+  await upload(current.settings, media.blob, "recording", (file) => recordingEntry(base, file, transcript));
 }
 
 async function saveVoice(current: Active, result: VoiceResult, reviewed: string): Promise<void> {
   if (result.transcriptError) toast("info", result.transcriptError);
-  const note = noteText(reviewed);
   // Audio is kept if the user asked for it (off by default), always while
   // transcription is off, and whenever there are no usable words, or the
   // voice note would be empty (shared/settings.ts, unit-tested).
-  const keepAudio = keepsVoiceAudio(current.settings, note);
+  const keepAudio = keepsVoiceAudio(current.settings, noteText(reviewed));
   const capturedAt = new Date(Date.now() - result.durationMs).toISOString();
-  const base = { kind: "voice-note" as const, capturedAt, page: current.page, durationMs: result.durationMs };
+  const base = { capturedAt, page: current.page, durationMs: result.durationMs };
   if (keepAudio) {
-    await upload(current.settings, result.blob, "voice-note", (file) => (note ? { ...base, file, note } : { ...base, file }));
+    await upload(current.settings, result.blob, "voice-note", (file) => voiceNoteEntry(base, file, reviewed));
   } else {
-    await upload(current.settings, null, "voice-note", () => ({ ...base, note }));
+    await upload(current.settings, null, "voice-note", () => voiceNoteEntry(base, undefined, reviewed));
   }
-}
-
-/** The user's words as an entry's `note`: trimmed, and within the server's limit (it refuses longer ones). */
-function noteText(text: string): string {
-  return clampText(text.trim(), ENTRY_FIELD_LIMITS.note);
 }
 
 /** Upload `blob` (if any), post the entry, and hand it to the worker for notification. */
 async function upload(settings: RecorderSettings, blob: Blob | null, kind: EntryKind, build: (file: string) => EntryInput): Promise<void> {
-  const api = await getApi(settings);
+  // The worker sends the server URL and token with each start request: an
+  // offscreen document has no chrome.storage to read the settings from.
+  // The server's protocol was checked when the recording started
+  // (background/recording.ts).
+  const api = createApi(settings);
   const file = blob ? (await api.uploadMedia(blob, kind)).file : "";
   const { entry, session } = await api.postEntry(build(file));
   send({ type: "entry-created", entry, session });

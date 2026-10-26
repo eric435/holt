@@ -15,12 +15,19 @@
  * treated as plain text (rendered with textContent) and capped.
  */
 
-import type { ServerSource } from "./server-resolve.js";
+/**
+ * How the server for a tab was picked (shared/server-resolve.ts decides,
+ * and re-exports this). Defined here, next to its labels, so that this
+ * module imports nothing that touches chrome.*: the protocol contract test
+ * (packages/server/src/http/extension-contract.test.ts) runs it in Node.
+ */
+export type ServerSource = "tab" | "fixed" | "fallback";
 
 const MAX_PROJECT_NAME = 100;
 
 export interface StatusLike {
   version?: unknown;
+  protocolVersion?: unknown;
   project?: unknown;
 }
 

@@ -76,7 +76,7 @@ Clicking holt's icon opens a small menu:
 - **Screenshot area**, **Screenshot viewport**, **Screenshot full page**, **Voice note**, **Quick note**, **Start recording**: each does exactly what its shortcut does (the current binding is shown next to it); **Quick note** turns the menu itself into the note popup. While a voice note or recording runs, the menu offers only its **Stop** item, with the elapsed time.
 - **Settings** opens the side panel, the *settings panel*: the server and session, this session's entries (one per capture: the page, the file, and your note), and the settings (server: auto-detect or a fixed URL, token, transcription, keep audio, microphone, shortcuts).
 
-The menu's header names the project holt writes into for the page you are on. When no server answers, it says **Not connected** with the reason, and an **Open settings** button. The capture items stay usable: a capture looks for the server again, and says what went wrong if it still can't reach one.
+The menu's header names the project holt writes into for the page you are on. When no server answers, it says **Not connected** with the reason, and an **Open settings** button. The capture items stay usable: a capture looks for the server again, and says what went wrong if it still can't reach one. When a holt server answers but is from a release that speaks another protocol version (see [Updating](#updating-and-server-compatibility)), it says **Update needed** and which side to update.
 
 The panel is optional; everything works with it closed:
 
@@ -84,7 +84,7 @@ The panel is optional; everything works with it closed:
 - **Tab recording (Alt+R)** and **voice notes (Alt+A)** run in an *offscreen document*, a hidden extension page the worker creates while something is recording and closes afterwards.
 - **Text note (Alt+T, or the menu's Quick note)** opens a small popup under the toolbar icon with the text field focused: type, press Enter to save (Shift+Enter for a new line, Esc to close). It shows "Saved #N" and closes. If Chrome can't open the popup (for example when the browser window isn't focused), the same page opens in a small window instead.
 
-**Status indicator.** The toolbar icon shows what is going on: a red **REC** badge while a tab recording runs, an orange **MIC** badge during a voice note, and a red dot on the icon itself. Hover it for details, e.g. "holt (acme-web): recording tab since 14:02 (⌥R to stop)". When nothing is recording, a red **!** means no holt server answers for the local page in front (neither on the page's own origin nor at the fallback URL); the tooltip and holt's menu say why. It is only shown on local pages (`localhost` and friends), so the icon doesn't turn red while you browse other sites. The icon is browser UI, so unlike an in-page overlay it never appears in screenshots or recordings and needs no access to the page. Pin the icon (puzzle-piece menu → pin) so it is always visible.
+**Status indicator.** The toolbar icon shows what is going on: a red **REC** badge while a tab recording runs, an orange **MIC** badge during a voice note, and a red dot on the icon itself. Hover it for details, e.g. "holt (acme-web): recording tab since 14:02 (⌥R to stop)". When nothing is recording, a red **!** means no holt server answers for the local page in front (neither on the page's own origin nor at the fallback URL), or the one that answers can't be used with this version of the extension; the tooltip and holt's menu say why. It is only shown on local pages (`localhost` and friends), so the icon doesn't turn red while you browse other sites. The icon is browser UI, so unlike an in-page overlay it never appears in screenshots or recordings and needs no access to the page. Pin the icon (puzzle-piece menu → pin) so it is always visible.
 
 **Feedback.** With the panel open, results and errors appear there as messages. With it closed, the badge flashes "✓" when something was saved and "!" on an error (the error text is in the icon's tooltip for a few seconds), then goes back to REC/MIC if something is still recording.
 
@@ -120,6 +120,17 @@ There is no `tabs` permission and no `<all_urls>`. Updating from an earlier buil
 
 Screenshots and tab recordings need an activeTab grant for the tab. You get one by pressing a holt shortcut or opening holt's menu on that tab, so the menu's items always have it. The grant lasts until the tab navigates to a different page (SPA route changes don't count).
 
+## Updating, and server compatibility
+
+The extension and the server are released separately: Chrome updates a Web Store install by itself, while each project pins its own `@velvet-thunder/holt` in devDependencies. They agree on a **protocol version** (`PROTOCOL_VERSION` in `packages/shared`, reported by the server in `GET /__holt/status`; servers 0.0.2 and older don't report it and count as version 1). It only changes for breaking changes, so most extension and server releases work with each other.
+
+When they don't match, holt treats the server like one with a problem: the toolbar icon shows the red **!**, the menu says **Update needed**, the settings panel and the welcome tab show the message, and every capture refuses up front with it (before a recording starts, before an area is dragged, when the note window opens) rather than failing after you did the work:
+
+- *"The holt server in <project> is too old for this extension."* Update the server in that project: `npm i -D @velvet-thunder/holt@latest` (or, if you start it with npx, `npx @velvet-thunder/holt@latest`), then restart it or the Vite dev server.
+- *"This holt extension is older than the holt server …"* Update the extension: `chrome://extensions` → **Developer mode** → **Update**, or wait for Chrome to do it (it checks every few hours). An unpacked build: pull, rebuild and reload it.
+
+A new kind of capture does not change the protocol version. An older server refuses it with a message that the extension is probably newer than the server and how to update the server; holt shows that message as the capture's error.
+
 ## Known limitations
 
 - **Tab recordings can't be tested with fake media devices:** with Chrome's `--use-fake-device-for-media-stream` flag (used by the e2e test for voice notes), tab capture fails with "Requested device not found". The e2e test therefore records tabs in a separate Chrome without that flag.
@@ -154,7 +165,9 @@ src/
   content/               on-demand content scripts: area-select overlay, full-page scroll helper,
                          the editable transcript box (voice notes and tab recordings)
   permissions/           microphone permission page (opened in a tab when needed), with the transcription switch
-  shared/                message bus, settings, API client, page context, storage.session state
+  shared/                message bus, settings, API client, page context, storage.session state,
+                         entry bodies and the protocol version check (pure, also run by the server's
+                         contract test, packages/server/src/http/extension-contract.test.ts)
 ```
 
 Each module starts with a comment explaining what it does and, where it matters, why it lives in that context.

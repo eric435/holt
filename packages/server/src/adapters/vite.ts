@@ -9,11 +9,13 @@
  *  - `apply: "serve"`: the plugin does nothing during `vite build`.
  *  - Only types are imported from "vite", so this file has no runtime
  *    dependency on it. Vite is an optional peer dependency.
- *  - The middlewares are added directly in configureServer (not in a
- *    returned post-hook), so they run *before* Vite's own middlewares: its
- *    CORS handling must not answer our preflights, and its static file
- *    serving must not serve the session folders or holt.config.json
- *    (see output-guard.ts).
+ *  - Our middlewares must run *before* Vite's own: its CORS handling must
+ *    not answer our preflights, and its static file serving must not serve
+ *    the session folders or holt.config.json (see output-guard.ts). Adding
+ *    them in configureServer (not in a returned post-hook) was enough up to
+ *    Vite 6, but Vite 7 installs its CORS and host-check middlewares before
+ *    configureServer runs, so we move ours to the front of the stack.
+ *    holt's handler does its own CORS and Host checks (http/cors.ts).
  *  - `port`/`host` config keys are ignored: Vite owns the socket. Under
  *    Vite, holt's API is loopback-only by design. The Host check
  *    (http/cors.ts) accepts loopback names plus `config.host`, which
@@ -24,11 +26,11 @@
  *    standalone server, the supported way to use holt remotely
  *    (`--host <addr> --token ...`).
  *  - Requires Vite 5.4.12+ or 6.0.9+ (the peer range is
- *    `^5.4.12 || >=6.0.9`): older versions, including 6.0.0-6.0.8, answer
- *    every request with `Access-Control-Allow-Origin: *`
- *    (GHSA-vg6x-rcgg-rjx6), letting any web page read your app's source
- *    and the session files they serve. A plain `>=5.4.12` would admit
- *    those 6.0.x releases.
+ *    `^5.4.12 || ^6.0.9 || ^7.0.0 || ^8.0.0`, the majors CI tests): older
+ *    versions, including 6.0.0-6.0.8, answer every request with
+ *    `Access-Control-Allow-Origin: *` (GHSA-vg6x-rcgg-rjx6), letting any
+ *    web page read your app's source and the session files they serve. A
+ *    plain `>=5.4.12` would admit those 6.0.x releases.
  *  - Ending the session when the dev server closes: `closeBundle` is the
  *    hook Vite *awaits* inside `server.close()` (on SIGTERM, the `q`
  *    shortcut, and config restarts), and Vite calls `process.exit()` right
@@ -42,7 +44,7 @@
  */
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import type { Plugin, ViteDevServer } from "vite";
+import type { Connect, Plugin, ViteDevServer } from "vite";
 import { BASE_PATH, CONFIG_FILE_NAME } from "@holt/protocol";
 import { describeProject } from "../config/project.js";
 import type { HoltConfig } from "../config/types.js";
@@ -88,6 +90,9 @@ export default function holt(options: HoltViteOptions = {}): Plugin {
         publicDir: server.config.publicDir,
         base: server.config.base,
       };
+      // Connect's `stack` (public, though undocumented). Test doubles may lack it.
+      const stack = server.middlewares.stack as Connect.ServerStackItem[] | undefined;
+      const firstOurs = stack?.length ?? 0;
       server.middlewares.use((req, res, next) => {
         if (!requestTouchesProtectedPath(req.url, guard)) return next();
         // Same response as any missing file, so their existence is not revealed.
@@ -100,6 +105,9 @@ export default function holt(options: HoltViteOptions = {}): Plugin {
           if (!handled) next();
         }, next);
       });
+      // Ahead of Vite's own middlewares, including those Vite 7+ installs
+      // before configureServer runs (see the header).
+      stack?.unshift(...stack.splice(firstOurs));
 
       const project = describeProject(current.config.project);
       const httpServer = server.httpServer;

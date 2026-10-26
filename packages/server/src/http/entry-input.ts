@@ -25,6 +25,7 @@ import {
   type ScreenshotMode,
   type VoiceNoteEntry,
 } from "@holt/protocol";
+import { VERSION } from "../version.js";
 import { HttpError } from "./errors.js";
 
 type Json = Record<string, unknown>;
@@ -42,9 +43,32 @@ const ENTRY_KINDS: readonly EntryKind[] = ["screenshot", "recording", "voice-not
  */
 const RETIRED_KEYS = ["transcript", "text"] as const;
 
+/**
+ * Where an unknown `kind` most likely comes from: an extension newer than
+ * this server. New entry kinds do not bump PROTOCOL_VERSION (see
+ * @holt/protocol), because an old server refusing them is exactly this
+ * 400, and the extension shows the server's message to the user as is
+ * (toast, note page, or the toolbar badge's tooltip). So the message says
+ * what to do. The kind is echoed only when it looks like a kind: it is
+ * client input, and a message is no place for a megabyte of it.
+ */
+function unknownKindMessage(kind: string): string {
+  const shown = /^[A-Za-z0-9_-]{1,40}$/.test(kind) ? ` "${kind}"` : "";
+  return (
+    `Unknown entry kind${shown} ("kind" must be one of ${ENTRY_KINDS.map((k) => `"${k}"`).join(", ")}). ` +
+    `The holt extension is probably newer than this holt server (${VERSION}): update the server with ` +
+    `npm i -D @velvet-thunder/holt@latest (or run npx @velvet-thunder/holt@latest) and restart it.`
+  );
+}
+
 export function parseEntryInput(body: unknown): EntryInput {
   const o = asObject(body, "entry");
   // Check the kind first: if it is wrong, that is the most useful error.
+  // A kind we don't know (a string, not garbage) gets the "update the
+  // server" message; anything else the plain one.
+  if (typeof o.kind === "string" && o.kind !== "" && !(ENTRY_KINDS as readonly string[]).includes(o.kind)) {
+    bad(unknownKindMessage(o.kind));
+  }
   oneOf(o, "kind", ENTRY_KINDS);
   // Then retired keys, before any field check: an old extension's voice
   // note with only a `transcript` would otherwise get a confusing "needs

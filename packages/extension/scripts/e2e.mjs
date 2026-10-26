@@ -83,6 +83,11 @@
  * Only processes this script started (by PID) are stopped. Temp dirs are
  * removed even on failure (set KEEP_TEMP=1 to keep them).
  *
+ * On failure, with E2E_ARTIFACTS_DIR set (CI sets it and uploads the
+ * folder), the script first saves there: what the server wrote (the session
+ * folder with notes.md, PNGs, WebMs), Vite's output, the list of failures,
+ * and a screenshot of every page still open in either Chrome.
+ *
  * Usage: pnpm --filter @holt/extension e2e
  */
 
@@ -426,6 +431,34 @@ let cdpB;
 let notesAtEnd = "";
 let plain;
 
+/**
+ * Keep what is needed to debug a failed run without re-running it (see the
+ * header). Best effort: a problem here is logged, never a second failure.
+ */
+async function saveArtifacts(dir) {
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "failures.txt"), failures.map((f) => `- ${f}`).join("\n") + "\n");
+    if (vite) writeFileSync(join(dir, "vite.log"), vite.output());
+    if (existsSync(outDir)) cpSync(outDir, join(dir, "sessions"), { recursive: true });
+    // Our CDP client never rejects if Chrome is gone (or a page hangs), so
+    // every call here gets a deadline.
+    const within = (promise) => Promise.race([promise, sleep(5_000).then(() => null)]).catch(() => null);
+    for (const [name, c] of [["chrome-a", cdp], ["chrome-b", cdpB]]) {
+      if (!c) continue;
+      const targets = (await within(c.send("Target.getTargets")))?.targetInfos ?? [];
+      for (const [i, t] of targets.filter((t) => t.type === "page").entries()) {
+        const shot = await within(attach(c, t.targetId).then((session) => c.send("Page.captureScreenshot", { format: "png" }, session)));
+        const slug = t.url.replace(/^[a-z-]+:\/\/[^/]*/, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 40) || "root";
+        if (shot) writeFileSync(join(dir, `${name}-${i}-${slug}.png`), Buffer.from(shot.data, "base64"));
+      }
+    }
+    log(`saved failure artifacts to ${dir}`);
+  } catch (error) {
+    log(`could not save all failure artifacts to ${dir}: ${error.message}`);
+  }
+}
+
 async function cleanup() {
   plain?.close();
   cdp?.close();
@@ -704,6 +737,8 @@ try {
   for (let i = 1; i <= 5; i++) await mouse("mouseMoved", drag.x0 + ((drag.x1 - drag.x0) * i) / 5, drag.y0 + ((drag.y1 - drag.y0) * i) / 5);
   await mouse("mouseReleased", drag.x1, drag.y1);
   const prompt3 = await screenshotPrompt(cdp, collector, prompt2.targetId);
+  // Deliberately fixed: proves something does NOT happen (no entry while the
+  // prompt is open). Nothing to wait for; the prompt is already up.
   await sleep(300);
   check(entryCount(readNotes(outDir)) === 2, "the area screenshot was written before its prompt was answered");
   await cdp.send("Target.closeTarget", { targetId: prompt3.targetId }); // the user closes the window: same as Skip
@@ -779,6 +814,9 @@ try {
   const recItems = await menuItems(cdp, recMenu);
   check(JSON.stringify(recItems) === JSON.stringify(["Stop recording"]), `menu while recording: ${JSON.stringify(recItems)}`);
   log(`6/15 tab recording running: badge ${recBadge.text}, tooltip "${recBadge.title}", menu ${JSON.stringify(recItems)}, transcript box shown`);
+  // Not a wait for a condition (the box above already proves the recorder
+  // runs): this is the recording's length, so the WebM checked on disk has
+  // media in it (MediaRecorder hands over a chunk per second).
   await sleep(2_000);
   await clickMenuItem(cdp, recMenu, "Stop recording");
   await waitForEntries(6, `entry 6 (tab recording). Panel says: ${await panelToasts()}`);
@@ -820,7 +858,10 @@ try {
   await command("toggle-recording");
   await waitFor(async () => (await badge()).text === "REC", { what: "REC badge from the toggle-recording command" });
   await watchOffscreen();
-  await sleep(1_000);
+  // The badge says REC as soon as the worker records its state; the box only
+  // appears once the offscreen recorder has started. The screenshot, its
+  // prompt and the badge flash below give the recording its length.
+  await waitFor(transcriptBox, { what: "the transcript box for the headless recording (recorder started)" }).catch((e) => check(false, e.message));
   await command("screenshot-viewport");
   const prompt8 = await screenshotPrompt(cdp, collector, prompt5.targetId);
   await evaluate(cdp, prompt8.session, "document.getElementById('skip').click()");
@@ -892,6 +933,12 @@ try {
   log(`second Chrome, fixed mode: panel "${lineB.replace(/\s+/g, " ").trim()}", no probes`);
 
   const boxB = (fn, ...args) => inTranscriptBox(cdpB, pageB, fn, ...args);
+  /** Wait until the box has handed `text` to the worker as a draft (debounced; it then counts as edited). */
+  const draftSavedB = (text) =>
+    waitFor(
+      () => evB(`chrome.storage.session.get("transcriptBoxes").then(s => Object.values(s.transcriptBoxes ?? {}).some(b => b.draft?.text?.includes(${JSON.stringify(text)})))`),
+      { what: `the transcript box's draft "${text}" to reach the worker` },
+    ).catch((e) => check(false, e.message));
   const boxStateB = () => boxB("function () { const box = this.querySelector('.box'); return box && { review: box.classList.contains('review'), text: this.querySelector('textarea').value, error: this.querySelector('.error').textContent }; }");
 
   // 8a. from the menu
@@ -899,6 +946,8 @@ try {
   await waitFor(async () => (await badgeB()) === "MIC", { what: `the MIC badge. Panel says: ${await toastsB()}` });
   await offscreenB();
   await waitFor(boxStateB, { what: "the transcript box on the page during a voice note" }).catch((e) => check(false, e.message));
+  // The voice note's length (the recorder is running: the box is up). With
+  // no words heard it keeps its audio, which must be a WebM with sound in it.
   await sleep(2_000);
   const micInUse = await evB("chrome.storage.session.get('recordingVoice').then(s => s.recordingVoice?.microphoneLabel)");
   const voiceMenu = await menuB();
@@ -916,6 +965,8 @@ try {
     .catch((e) => check(false, e.message));
   const fallbackTitle = await evB("chrome.action.getTitle({})");
   check(/selected one not found/.test(fallbackTitle), `toolbar tooltip does not mention the microphone fallback: ${fallbackTitle}`);
+  await waitFor(boxStateB, { what: "the transcript box for the voice note with a missing microphone" }).catch((e) => check(false, e.message));
+  // The voice note's length, as in 8a.
   await sleep(1_500);
   await commandB("toggle-voice");
   await waitForEntries(11, "entry 11 (voice note with a missing microphone)");
@@ -937,6 +988,9 @@ try {
   await commandB("toggle-voice");
   const used = await waitFor(async () => (await evB("chrome.storage.session.get('recordingVoice').then(s => s.recordingVoice?.microphoneLabel ?? null)")), { what: "voice note state" });
   check(used === "Fake Audio Input 1", `voice note used "${used}", expected the picked "Fake Audio Input 1"`);
+  // recordingVoice is written before the recorder starts; the box after.
+  await waitFor(boxStateB, { what: "the transcript box for the voice note with the picked microphone" }).catch((e) => check(false, e.message));
+  // The voice note's length, as in 8a.
   await sleep(1_500);
   await commandB("toggle-voice");
   await waitForEntries(12, "entry 12 (voice note with the picked microphone)");
@@ -950,13 +1004,16 @@ try {
   await waitFor(boxStateB, { what: "the transcript box for the reviewed voice note" });
   await boxB("function () { this.querySelector('textarea').focus(); }");
   await cdpB.send("Input.insertText", { text: editedText }, pageB);
-  await sleep(1_000);
+  await draftSavedB(editedText);
   await commandB("toggle-voice");
   const review = await waitFor(async () => {
     const state = await boxStateB();
     return state?.review ? state : null;
   }, { what: "the transcript box to switch to review after stopping" }).catch((e) => (check(false, e.message), null));
-  await sleep(2_500); // longer than the recogniser's final-result grace: nothing may be saved while the user reviews
+  // Deliberately fixed: proves nothing is saved while the user reviews.
+  // Longer than the recogniser's final-result grace (FINAL_RESULT_GRACE_MS,
+  // 1.5 s in shared/speech.ts), after which a buggy auto-save would land.
+  await sleep(2_500);
   check(entryCount(readNotes(outDir)) === 12, "a reviewed voice note was saved before the user clicked Save");
   check(review?.text.includes(editedText), `review box text: ${JSON.stringify(review?.text)}`);
   await boxB("function (label) { [...this.querySelectorAll('button')].find(b => b.textContent === label).click(); }", "Save");
@@ -969,13 +1026,14 @@ try {
   await waitFor(boxStateB, { what: "the transcript box for the discarded voice note" });
   await boxB("function () { this.querySelector('textarea').focus(); }");
   await cdpB.send("Input.insertText", { text: "Throw this away." }, pageB);
-  await sleep(1_000);
+  await draftSavedB("Throw this away.");
   await commandB("toggle-voice");
   await waitFor(async () => (await boxStateB())?.review, { what: "review before discarding" }).catch((e) => check(false, e.message));
   await boxB("function (label) { [...this.querySelectorAll('button')].find(b => b.textContent === label).click(); }", "Discard…");
   await boxB("function (label) { [...this.querySelectorAll('button')].find(b => b.textContent === label).click(); }", "Discard");
   await waitFor(async () => !(await boxStateB()), { timeoutMs: 3_000, what: "the transcript box to close after Discard" }).catch((e) => check(false, e.message));
   await waitFor(async () => (await toastsB()).includes("Voice note discarded."), { what: "the discard message" }).catch((e) => check(false, e.message));
+  // Deliberately fixed: proves a discarded voice note is NOT written later.
   await sleep(1_000);
   check(entryCount(readNotes(outDir)) === 13, "a discarded voice note was written");
   log("discarded voice note: box closed, nothing written");
@@ -993,6 +1051,9 @@ try {
   check(/^Transcription is off/.test(offPlaceholder), `transcript box placeholder with transcription off: ${JSON.stringify(offPlaceholder)}`);
   await boxB("function () { this.querySelector('textarea').focus(); }");
   await cdpB.send("Input.insertText", { text: offNote }, pageB);
+  await draftSavedB(offNote);
+  // The voice note's length: with transcription off its audio is kept and
+  // checked on disk, so it must not stop right after starting.
   await sleep(1_000);
   await commandB("toggle-voice");
   await waitFor(async () => (await boxStateB())?.review, { what: "review with transcription off" }).catch((e) => check(false, e.message));
@@ -1023,6 +1084,9 @@ try {
     }, { what: "the prompt's mic button to start dictation (or say why it can't)" }).catch((e) => (check(false, e.message), micBefore));
     check(!/blocked|Could not start/.test(micDuring.status), `dictation with the fake microphone failed to open it: ${micDuring.status}`);
   }
+  // Deliberately fixed: lets the recogniser run (and maybe produce text from
+  // the beeps) before the user types and saves, which is the race this step
+  // is about. There is no "has heard something" to wait for.
   await sleep(1_000);
   await typeInPrompt(cdpB, promptB.session, dictatedNote);
   await evaluate(cdpB, promptB.session, "document.getElementById('save').click()");
@@ -1041,6 +1105,7 @@ try {
   check(!(await viteOverlay()), "a Vite error overlay appeared during the test");
 
   // ---- cross-origin path (preflight / local network access) ----------------------
+  const requestsBefore = requests.size;
   const workerFetch = await evaluate(
     cdp,
     worker.sessionId,
@@ -1048,7 +1113,11 @@ try {
        .then(async r => ({ status: r.status, body: await r.json() }), e => ({ error: String(e) }))`,
   );
   check(workerFetch.status === 200 && workerFetch.body?.ok === true, `worker fetch of /status failed: ${JSON.stringify(workerFetch)}`);
-  await sleep(300);
+  // The fetch has resolved; its Network events may still be on the way.
+  await waitFor(() => [...requests.values()].slice(requestsBefore).some((r) => r.status !== undefined || r.failed), {
+    timeoutMs: 5_000,
+    what: "the worker's /status request in the network log",
+  }).catch((e) => check(false, e.message));
   const seen = [...requests.values()];
   // Only requests to the holt server count: the dead fallback URL refuses connections by design.
   const blocked = seen.filter((r) => r.failed && r.url.startsWith(origin));
@@ -1208,6 +1277,8 @@ try {
 } finally {
   const notes = notesAtEnd || readNotes(outDir);
   if (notes) console.log(`\n----- notes.md -----\n${notes}----- end notes.md -----\n`);
+  // Before cleanup(): it closes both Chromes and deletes the temp dir.
+  if (failures.length && process.env.E2E_ARTIFACTS_DIR) await saveArtifacts(resolve(process.env.E2E_ARTIFACTS_DIR));
   await cleanup();
 }
 

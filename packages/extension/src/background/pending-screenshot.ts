@@ -68,8 +68,8 @@
  */
 
 import type { Entry, SessionInfo } from "@holt/protocol";
-import { ApiError, getApi } from "../shared/api.js";
-import { apiForServer } from "../shared/server.js";
+import { ApiError } from "../shared/api.js";
+import { apiForServer, getApi } from "../shared/server.js";
 import { errorMessage, type ScreenshotNoteFinishResponse } from "../shared/messages.js";
 import { notePageUrl } from "../shared/note-prompt.js";
 import {

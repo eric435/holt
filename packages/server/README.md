@@ -21,7 +21,7 @@ npm i -D @velvet-thunder/holt
 # or: pnpm add -D @velvet-thunder/holt / yarn add -D @velvet-thunder/holt
 ```
 
-Requires Node.js 20 or newer.
+Requires Node.js 22 or newer.
 
 ## Run it
 
@@ -89,8 +89,9 @@ Vite would otherwise serve every screenshot and `notes.md` at `/qa/...`, and
 the config file (with any token in it) at `/holt.config.json`, to anything
 that can reach the dev server.
 
-**Requires Vite 5.4.12+ (5.x) or 6.0.9+** (the `vite` peer dependency range
-is `^5.4.12 || >=6.0.9`). Earlier versions, including 6.0.0 to 6.0.8, answer
+**Requires Vite 5.4.12+ (5.x), 6.0.9+, 7 or 8** (the `vite` peer
+dependency range is `^5.4.12 || ^6.0.9 || ^7.0.0 || ^8.0.0`, the majors CI
+tests). Earlier versions, including 6.0.0 to 6.0.8, answer
 every dev-server request with `Access-Control-Allow-Origin: *`
 ([GHSA-vg6x-rcgg-rjx6](https://github.com/vitejs/vite/security/advisories/GHSA-vg6x-rcgg-rjx6)),
 so any web page you visit could read your app's source through the dev
@@ -145,8 +146,11 @@ non-default `host`, is logged at startup.
 
 **Pinning the extension:** by default any installed Chrome extension may call
 the server. To allow only yours, copy its ID from `chrome://extensions` into
-`allowedExtensionIds` (`holt init` leaves this key out because the ID
-differs per install):
+`allowedExtensionIds`. Which ID that is depends on how holt is installed: an
+unpacked build (Load unpacked) gets its own ID per install, so pin it in a
+local, uncommitted config; every install from the Chrome Web Store has the
+same ID (the store's), so pinning that one works for the whole team, in a
+committed `holt.config.json` too. `holt init` leaves this key out:
 
 ```json
 { "allowedExtensionIds": ["abcdefghijklmnopabcdefghijklmnop"] }
@@ -178,6 +182,29 @@ _Session ended at 2026-10-13T08:10:00-07:00 (2 entries)._
 When holt creates the output directory, it puts a `.gitignore` in it so
 sessions are not committed by default (screenshots can contain anything that
 was on screen). Delete that file if you want to commit sessions.
+
+## Updating, and extension compatibility
+
+The extension updates itself from the Chrome Web Store, while your project
+pins this package, so the two are often from different releases. They agree
+on a protocol version, which `GET /__holt/status` reports as
+`protocolVersion` (also exported as `PROTOCOL_VERSION`). It only changes for
+breaking changes, so most extension and server releases work together.
+
+When they don't match, the extension says so before it captures anything
+(the toolbar icon's red "!", its menu, the settings panel), and which side
+to update:
+
+- the server is too old: update it with `npm i -D @velvet-thunder/holt@latest`
+  (if you run it with npx: `npx @velvet-thunder/holt@latest`), then restart
+  it, or the Vite dev server;
+- the extension is too old: update it at `chrome://extensions` (Developer
+  mode, then Update) or wait for Chrome to.
+
+A capture of a kind this server doesn't know yet (new kinds do not change
+the protocol version) is refused with a 400 that says the extension is
+probably newer than the server and how to update it; the extension shows
+that message.
 
 ## Security
 

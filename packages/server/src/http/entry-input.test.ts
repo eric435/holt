@@ -140,6 +140,19 @@ describe("parseEntryInput: rejected bodies", () => {
     );
   });
 
+  it.each(["sketch", "Screenshot", "constructor"])("says an unknown kind %j means the extension is newer, and how to update the server", (kind) => {
+    const message = rejection({ ...valid.screenshot, kind });
+    expect(message).toContain(`Unknown entry kind "${kind}"`);
+    expect(message).toMatch(/extension is probably newer than this holt server/);
+    expect(message).toContain("npm i -D @velvet-thunder/holt@latest");
+  });
+
+  it("does not echo an unknown kind that doesn't look like one", () => {
+    const message = rejection({ ...valid.screenshot, kind: `${"x".repeat(41)}` });
+    expect(message).toMatch(/^Unknown entry kind \(/);
+    expect(rejection({ ...valid.screenshot, kind: "<b>hi</b>" })).toMatch(/^Unknown entry kind \(/);
+  });
+
   it("reports a bad kind before any other problem", () => {
     expect(rejection({ kind: "nope" })).toMatch(/"kind"/);
   });

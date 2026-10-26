@@ -39,7 +39,8 @@ describe("screenshotEntry", () => {
   });
 
   it("carries no bookkeeping fields to the server", () => {
-    const entry = screenshotEntry({ ...pending, draft: "d", sessionGone: true }, "x");
+    const withDraft: PendingScreenshot = { ...pending, draft: "d", sessionGone: true };
+    const entry = screenshotEntry(withDraft, "x");
     for (const key of ["id", "windowId", "tabId", "at", "popupWindowId", "draft", "sessionGone", "serverUrl"]) expect(entry).not.toHaveProperty(key);
   });
 

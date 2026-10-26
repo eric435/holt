@@ -2,6 +2,13 @@
  * The Vite adapter, tested against a stub of the parts of ViteDevServer it
  * uses: `config.root`, `config.logger`, `middlewares.use`, and `httpServer`
  * (an EventEmitter is enough to fire "listening" and "close").
+ *
+ * The last block starts a real Vite dev server (whichever `vite` this
+ * package has installed) with the plugin in it. That is the part that can
+ * break when Vite changes: middleware order against Vite's own CORS and
+ * static serving, and `closeBundle` being awaited in `server.close()`. CI
+ * runs this file against every Vite major in the peer range (the
+ * `vite-compat` job in .github/workflows/ci.yml).
  */
 import { EventEmitter } from "node:events";
 import http from "node:http";
@@ -15,7 +22,8 @@ import {
   type SessionResponse,
   type StatusResponse,
 } from "@holt/protocol";
-import type { Connect, Plugin, ViteDevServer } from "vite";
+import type { AddressInfo } from "node:net";
+import { createServer, version as viteVersion, type Connect, type Plugin, type ViteDevServer } from "vite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import holt from "./vite.js";
 
@@ -29,7 +37,8 @@ afterEach(async () => {
   appServer?.closeAllConnections();
   appServer?.close();
   appServer = undefined;
-  await rm(root, { recursive: true, force: true });
+  // Retries: on Windows a file Vite's watcher just let go of can still be busy for a moment.
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 function stubServer(httpServer: EventEmitter | null = new EventEmitter()) {
@@ -44,6 +53,13 @@ async function configure(plugin: Plugin, server: ViteDevServer): Promise<void> {
   const fn = typeof hook === "function" ? hook : hook?.handler;
   await fn?.call({} as never, server);
 }
+
+/**
+ * Vite's `/@fs/` URL for an absolute file path: forward slashes, one slash
+ * after "@fs" ("/@fs/home/me/x", "/@fs/C:/proj/x"). Plain concatenation
+ * would give "/@fsC:\proj\x" on Windows, which is not a URL Vite serves.
+ */
+const fsUrl = (file: string) => `/@fs/${file.replace(/\\/g, "/").replace(/^\//, "")}`;
 
 const EXT_HEADERS = {
   origin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
@@ -199,7 +215,7 @@ describe("holt() Vite plugin", () => {
     const { server, use } = stubServer();
     await configure(holt(), server);
     const origin = await serveMiddlewares(use);
-    for (const p of ["/holt.config.json", "/holt.config.json?import", "/holt%2Econfig.json", "/HOLT.config.json", `/@fs${path.join(root, "holt.config.json")}`]) {
+    for (const p of ["/holt.config.json", "/holt.config.json?import", "/holt%2Econfig.json", "/HOLT.config.json", fsUrl(path.join(root, "holt.config.json"))]) {
       const res = await fetch(`${origin}${p}`);
       expect(res.status, p).toBe(404);
       expect(await res.text(), p).not.toContain("s3cret");
@@ -324,5 +340,87 @@ describe("holt() Vite plugin: middleware order and shutdown", () => {
     await configure(holt({ token: "t" }), server);
     httpServer.emit("listening");
     expect(logger.info.mock.calls.map((c) => String(c[0])).join("\n")).toContain(`at ${origin}${BASE_PATH}`);
+  });
+});
+
+const viteMajor = Number(viteVersion.split(".")[0]);
+
+describe(`holt() in a real Vite ${viteVersion} dev server`, () => {
+  let vite: ViteDevServer | undefined;
+  afterEach(async () => {
+    await vite?.close();
+    vite = undefined;
+  });
+
+  /** Start Vite on a free loopback port with the plugin and nothing else; returns its origin. */
+  async function startVite(): Promise<string> {
+    vite = await createServer({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      clearScreen: false,
+      // No dependency scan or pre-bundling: nothing here imports anything.
+      optimizeDeps: { noDiscovery: true, include: [] },
+      server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false },
+      plugins: [holt()],
+    });
+    await vite.listen();
+    return `http://127.0.0.1:${(vite.httpServer?.address() as AddressInfo).port}`;
+  }
+
+  it("answers its API, hides the output dir and config from Vite's file serving, and ends the session on close()", async () => {
+    await writeFile(path.join(root, "index.html"), "<!doctype html><title>app</title>");
+    await writeFile(path.join(root, "other.txt"), "served by vite");
+    // Read from the Vite root, like the example app's (no plugin options).
+    await writeFile(path.join(root, "holt.config.json"), JSON.stringify({ sessionTitle: "Real Vite" }));
+    const origin = await startVite();
+    // Vite 7+ resolves the root's symlinks (macOS: /var is /private/var).
+    // Build file URLs from Vite's spelling, the one its own URLs use.
+    const viteRoot = vite?.config.root ?? root;
+
+    // Vite's own file serving is on: a file in the root is served...
+    const other = await fetch(`${origin}/other.txt`);
+    expect(other.status).toBe(200);
+    expect(await other.text()).toContain("served by vite");
+
+    // ...and holt answers its API.
+    const status = await fetch(`${origin}${BASE_PATH}/status`, { headers: EXT_HEADERS });
+    expect(status.status).toBe(200);
+    expect(status.headers.get("access-control-allow-origin")).toBe(EXT_HEADERS.origin);
+    expect(((await status.json()) as StatusResponse).ok).toBe(true);
+
+    const start = await fetch(`${origin}${BASE_PATH}/session/start`, { method: "POST", headers: EXT_HEADERS });
+    const { session } = (await start.json()) as SessionResponse;
+    const notesPath = path.join(session?.dir ?? "", "notes.md");
+    expect(await readFile(notesPath, "utf8")).toMatch(/^# Real Vite /);
+
+    // Neither the session folder nor the config file is served, under any
+    // URL Vite would serve them by.
+    const sessionUrl = `/qa/${session?.id ?? ""}/notes.md`;
+    for (const p of [sessionUrl, `${sessionUrl}?raw`, "/holt.config.json", "/holt.config.json?import", fsUrl(path.join(viteRoot, "holt.config.json")), fsUrl(path.join(viteRoot, sessionUrl))]) {
+      const res = await fetch(`${origin}${p}`);
+      expect(res.status, p).toBe(404);
+    }
+
+    // server.close() awaits closeBundle, so the footer is on disk as soon as it resolves.
+    await vite?.close();
+    vite = undefined;
+    expect(await readFile(notesPath, "utf8")).toMatch(/_Session ended at \S+ \(0 entries\)\._\n$/);
+  });
+
+  // Vite 7+ installs its CORS middleware before configureServer runs; the
+  // plugin moves its middlewares to the front so the preflight is ours.
+  it("answers the extension's CORS preflight itself, ahead of Vite's CORS middleware", async () => {
+    const origin = await startVite();
+    const preflight = await fetch(`${origin}${BASE_PATH}/media`, {
+      method: "OPTIONS",
+      headers: {
+        origin: EXT_HEADERS.origin,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": `content-type,${CLIENT_HEADER}`,
+      },
+    });
+    expect(preflight.ok).toBe(true);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe(EXT_HEADERS.origin);
   });
 });

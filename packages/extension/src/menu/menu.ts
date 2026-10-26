@@ -34,7 +34,9 @@
  * (`serverInfo`, owned by the worker: background/server-info.ts). The menu
  * asks the worker to check again when it opens, and follows the answer.
  * When no server answers, the header says so ("Not connected: …", with the
- * API client's hint) and offers "Open settings".
+ * API client's hint) and offers "Open settings". A holt server that speaks
+ * another protocol version (shared/protocol-compat.ts) gets "Update
+ * needed: …" with what to update instead.
  *
  * The capture items stay enabled even then. `serverInfo` is a snapshot, and
  * a capture resolves its server afresh (the dev server may have just
@@ -76,6 +78,7 @@ const items = document.getElementById("items") as HTMLElement;
 const status = document.getElementById("status") as HTMLElement;
 const project = document.getElementById("project") as HTMLElement;
 const problem = document.getElementById("problem") as HTMLElement;
+const problemTitle = document.getElementById("problem-title") as HTMLElement;
 const problemText = document.getElementById("problem-text") as HTMLElement;
 const problemSettings = document.getElementById("problem-settings") as HTMLButtonElement;
 
@@ -166,8 +169,10 @@ function renderServer(info: ServerInfo | undefined): void {
   project.textContent = info?.ok ? (info.project ?? displayHost(info.serverUrl)) : "";
   problem.hidden = !info || info.ok;
   if (!info || info.ok) return;
+  // A holt server of another protocol version answered: its message says what to update.
+  problemTitle.textContent = info.incompatible ? "Update needed" : "Not connected";
   // In front: whether the page itself was checked; the message names the server that was tried.
-  const text = info.source === "fallback" ? `No holt on this page, and none at the fallback URL. ${info.message}` : info.message;
+  const text = info.source === "fallback" && !info.incompatible ? `No holt on this page, and none at the fallback URL. ${info.message}` : info.message;
   problemText.textContent = clip(text, MAX_PROBLEM_CHARS);
   problemText.title = text;
 }

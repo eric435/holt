@@ -1,3 +1,34 @@
+/**
+ * The version of the extension <-> server protocol (everything in this
+ * package), reported by the server as `protocolVersion` in `GET /status`.
+ *
+ * Why it exists: the extension auto-updates from the Chrome Web Store,
+ * while every project pins its own `@velvet-thunder/holt` in
+ * devDependencies, so an extension and a server from different releases
+ * meeting each other is the normal case, not an accident. The shared types
+ * only line up at compile time; this number is how the two find out at run
+ * time whether they still understand each other, and the extension refuses
+ * a server that speaks another version up front (with a message saying
+ * which side to update) instead of failing later with a confusing 400.
+ *
+ * The rule: bump it ONLY for breaking changes, i.e. when a server or an
+ * extension of the previous version would misbehave against the new one:
+ *   - a route or a field is removed or renamed;
+ *   - a field changes meaning, type or format;
+ *   - an optional field becomes required, or a new required one appears
+ *     in a request the extension sends.
+ * Do NOT bump it for additive changes that old peers cope with:
+ *   - a new optional field (an old server drops unknown keys, an old
+ *     extension ignores fields it doesn't read);
+ *   - a new entry kind: an old server refuses it with a 400 that says the
+ *     extension is newer than the server and how to update the server
+ *     (packages/server/src/http/entry-input.ts), which the user sees.
+ *
+ * Servers before `protocolVersion` existed (0.0.2 and older) speak version
+ * 1, so a status without the field counts as 1.
+ */
+export const PROTOCOL_VERSION = 1;
+
 /** Default TCP port for the standalone server (`npx holt`). */
 export const DEFAULT_PORT = 4848;
 

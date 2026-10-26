@@ -2,7 +2,9 @@
  * HTTP API. All paths are relative to BASE_PATH.
  *
  *   GET  /status                 -> StatusResponse
- *   POST /session/start          -> SessionResponse   body: StartSessionRequest
+ *          carries `protocolVersion` (PROTOCOL_VERSION in constants.ts):
+ *          the extension checks it before it captures anything.
+ *   POST /session/start         -> SessionResponse   body: StartSessionRequest
  *   POST /session/stop           -> SessionResponse
  *   POST /media                  -> MediaUploadResponse
  *          raw bytes in the body; `Content-Type` must be in ACCEPTED_MEDIA_TYPES;
@@ -14,7 +16,10 @@
  *          per-field length caps (ENTRY_FIELD_LIMITS): page.title 1,000
  *          characters, page.url 8,192, note 100,000, file 255; longer is a
  *          400 naming the field. The retired keys `transcript` and `text`
- *          are a 400 ("the extension is out of date"), not ignored.
+ *          are a 400 ("the extension is out of date"), not ignored. An
+ *          entry `kind` the server doesn't know is a 400 saying the
+ *          extension is probably newer than the server, and how to update
+ *          the server. Other unknown keys are dropped.
  *
  * Every request must carry `x-holt-client: extension` and, if the server
  * is configured with a token, `x-holt-token`.
@@ -58,8 +63,14 @@ export interface StatusResponse {
   ok: true;
   /** The tool, always "holt". See `project` for what it is serving. */
   name: "holt";
-  /** The holt server package version. */
+  /** The holt server package version (for display; compatibility is `protocolVersion`). */
   version: string;
+  /**
+   * PROTOCOL_VERSION (constants.ts) of the server. Missing from servers
+   * 0.0.2 and older, which speak protocol 1; the extension reads a status
+   * without it as 1.
+   */
+  protocolVersion: number;
   project: ProjectInfo;
   session: SessionInfo | null;
   /** Non-secret config the extension may want to show. */

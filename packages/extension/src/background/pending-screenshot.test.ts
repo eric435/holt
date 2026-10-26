@@ -68,11 +68,14 @@ function fakeApi(serverUrl: string) {
   };
 }
 
-vi.mock("../shared/server.js", () => ({ apiForServer: async (serverUrl: string) => fakeApi(serverUrl) }));
-vi.mock("../shared/api.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../shared/api.js")>()),
+vi.mock("../shared/server.js", () => ({
+  apiForServer: async (serverUrl: string) => fakeApi(serverUrl),
   getApi: async () => fakeApi("settings-url"),
 }));
+// Mocked as itself: a mocked module survives vi.resetModules() (beforeEach),
+// so the module under test sees the same ApiError class as this file and
+// recognises the errors the fake API throws.
+vi.mock("../shared/api.js", async (importOriginal) => importOriginal<typeof import("../shared/api.js")>());
 
 vi.mock("./notify.js", () => ({
   notifyEntryAdded: async (entry: { id: string }) => {

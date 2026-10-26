@@ -9,7 +9,7 @@ pnpm test         # all packages
 pnpm typecheck
 ```
 
-Node 20+ and pnpm 10 (`corepack enable` picks the version from package.json).
+Node 22+ and pnpm 10 (`corepack enable` picks the version from package.json).
 
 ## Day-to-day
 
@@ -46,20 +46,32 @@ package from the registry).
 
 ## Checks that run in CI
 
-- `pnpm typecheck`, `pnpm build`, `pnpm test`
+On every push to `main` and every pull request
+([ci.yml](.github/workflows/ci.yml); the full table is in
+[docs/TESTING.md](docs/TESTING.md#what-ci-runs)):
+
+- `pnpm typecheck`, `pnpm build`, `pnpm test` on Linux with Node 22 and 24.
 - `pnpm --filter @velvet-thunder/holt check-pack` lists what `npm pack`
   would publish from `packages/server` and fails on any file outside an
   allow-list (`dist/`, `schema.json`, `README.md`, `LICENSE`,
   `package.json`), on a missing required file, or on any runtime
   dependency. The package must keep **zero runtime dependencies**; if you
   believe one is needed, say why in the PR.
+- The example app (`examples/vite-app`) is typechecked and built.
 - `pnpm --filter @holt/extension smoke` loads the built extension in a
   real headless Chrome and fails on any startup error.
+- The server's typecheck, build and unit tests also run on Windows and
+  macOS.
+- `vite.test.ts` runs against the lowest and the latest release of every
+  Vite major in the server's peer range.
+- `pnpm --filter @holt/extension e2e` (real Chrome and a real server, about
+  a minute) runs as its own job. On failure the run has an
+  `e2e-artifacts` download with the session folder, Vite's output and
+  screenshots.
 
-The end-to-end test (`pnpm --filter @holt/extension e2e`, real Chrome and a
-real server) is not run in CI; run it locally before a release and after
-changes to the worker, the offscreen document or the protocol. See
-[docs/TESTING.md](docs/TESTING.md).
+Running e2e locally is still worth it before you push changes to the
+worker, the offscreen document or the protocol: it is the only test of the
+real capture flows, and a local failure is quicker to debug.
 
 ## Releasing
 
@@ -165,10 +177,12 @@ extension is `packages/extension/package.json` and tags
 `extension-v<version>`; the server is `packages/server/package.json` and
 tags `v<version>`. A server is updated whenever a user updates their npm
 dependency, and the extension whenever the store approves an update, so any
-recent extension can meet any recent server. Until the protocol carries a
-version of its own (planned), keep changes to `packages/shared`
-(`@holt/protocol`) backward compatible in both directions, and release the
-server first when both change.
+recent extension can meet any recent server. The protocol between them has
+its own version, `PROTOCOL_VERSION` in `packages/shared`: bump it only for
+breaking changes (the rule is written next to the constant and in
+docs/ARCHITECTURE.md), and the extension then tells users which side to
+update. Prefer additive changes, and release the server first when both
+change.
 
 ## Where things go
 

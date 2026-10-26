@@ -44,7 +44,7 @@
 import { errorMessage, isTopFrameOfTab, type OffscreenStartResponse, type RecorderKind, type RecorderSettings, type RecorderToggleResponse, type SenderLike } from "../shared/messages.js";
 import { pageContextFromTab } from "../shared/page-context.js";
 import { PERMISSIONS_PAGE } from "../shared/pages.js";
-import { resolveServerForTab } from "../shared/server.js";
+import { compatibleServerForTab } from "../shared/server.js";
 import { loadSettings } from "../shared/settings.js";
 import { describeMicrophoneError, microphoneProblem } from "../shared/speech-errors.js";
 import { clearState, getRecordingState, getState, setState, type TranscriptBoxState } from "../shared/state.js";
@@ -322,9 +322,15 @@ async function clearIfCurrent(slot: "screen" | "voice", id: string): Promise<voi
  * navigates to another origin (or another project's dev server) meanwhile,
  * or the settings change.
  */
+/**
+ * What the offscreen recorder needs, including the server the result will
+ * go to. Throws (and the recording does not start) if that server speaks
+ * another protocol version (shared/server.ts `assertCompatible`): better
+ * than a recording the server refuses after the user has narrated it.
+ */
 async function recorderSettings(tab: chrome.tabs.Tab | undefined): Promise<RecorderSettings> {
   const settings = await loadSettings();
-  const { serverUrl } = await resolveServerForTab(tab, settings);
+  const { serverUrl } = await compatibleServerForTab(tab, settings);
   const { token, transcribe, keepAudio, microphoneId, microphoneLabel } = settings;
   return { serverUrl, token, transcribe, keepAudio, microphoneId, microphoneLabel };
 }

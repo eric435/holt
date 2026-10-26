@@ -86,8 +86,12 @@ into, as hostile.
   or a container that shares the host's loopback interface, set a token
   (in `HOLT_TOKEN`).
 - **Every installed Chrome extension.** Any `chrome-extension://` origin
-  passes by default, because extension IDs differ per install and we cannot
-  know yours in advance. Set `allowedExtensionIds` to pin writes to yours.
+  passes by default, because the server cannot know holt's ID in advance:
+  an unpacked install gets its own ID per install, and the Chrome Web Store
+  build has one ID shared by every store install, which the server does not
+  hard-code. Set `allowedExtensionIds` to pin writes to yours: copy the ID
+  from `chrome://extensions` (for a store install it is the same on every
+  machine, so a committed config can pin it for a team).
   This cannot protect `GET /status`, which arrives with no `Origin`; only a
   token does.
 - **Anything you list in `allowedOrigins`.** Listing the app under test
@@ -119,10 +123,13 @@ as Vite is. Two consequences:
   the path is spelled: percent-encoded, in another letter case, with `..`
   or backslashes, under `base` or `publicDir`, or through Vite's `/@fs/`
   and `/@id/` prefixes (including Windows drive paths like
-  `/@fs/C:/...`). The peer range (`^5.4.12 || >=6.0.9`) excludes every
-  Vite release that answered CORS requests with `*` (GHSA-vg6x-rcgg-rjx6:
-  before 5.4.12, and 6.0.0 to 6.0.8), which would have let any website
-  read captures by guessing the timestamp-based folder names.
+  `/@fs/C:/...`). The peer range (`^5.4.12 || ^6.0.9 || ^7.0.0 ||
+  ^8.0.0`) excludes every Vite release that answered CORS requests with
+  `*` (GHSA-vg6x-rcgg-rjx6: before 5.4.12, and 6.0.0 to 6.0.8), which
+  would have let any website read captures by guessing the
+  timestamp-based folder names. The plugin puts its middlewares ahead of
+  all of Vite's (Vite 7+ installs its CORS and host-check middlewares
+  before plugins run), so holt's own checks always answer for its API.
 
 ## The extension
 
